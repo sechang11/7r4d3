@@ -77,11 +77,72 @@
     </div>
   </div>
 
+  <!-- session game plan -->
+  <div class="card wide" style="margin-bottom:14px">
+    <div class="bucket-head" style="margin-bottom:12px">
+      <h2 style="margin:0">Session game plan</h2>
+      <span class="desc">set before the session — it decides what you're allowed to do during it</span>
+      <div class="spacer"></div>
+      <span id="planPill" class="pill down"><span class="dot"></span><span id="planPillTxt">no plan</span></span>
+      <button id="planToggle" class="ghost">edit</button>
+    </div>
+
+    <div id="planLocks"></div>
+
+    <div id="planEditor" hidden>
+      <div class="planGrid">
+        <label>Bias
+          <select id="pBias">
+            <option value="both">Both directions</option>
+            <option value="long">Long only</option>
+            <option value="short">Short only</option>
+            <option value="standaside">Stand aside</option>
+          </select>
+        </label>
+        <label>Max trades
+          <input id="pMaxTrades" type="number" min="0" step="1">
+        </label>
+        <label>Max session loss ($)
+          <input id="pMaxLoss" type="number" min="0" step="50">
+        </label>
+        <label>Min dealing range (%)
+          <input id="pMinDrange" type="number" min="0" step="5">
+        </label>
+        <label>Window start (broker)
+          <input id="pWinStart" type="text" placeholder="09:30">
+        </label>
+        <label>Window end (broker)
+          <input id="pWinEnd" type="text" placeholder="16:00">
+        </label>
+      </div>
+
+      <div style="margin-top:12px">
+        <h2>Allowed thesis buckets</h2>
+        <div id="pBuckets" class="tiles"></div>
+      </div>
+
+      <label class="chk" style="margin-top:12px">
+        <input id="pH4" type="checkbox"> Require H4 trend to agree with entry direction
+      </label>
+
+      <label style="margin-top:10px;display:block">Note to self
+        <input id="pNote" type="text" placeholder="e.g. CPI at 08:30 — no entries before the reaction settles">
+      </label>
+
+      <div class="planActions">
+        <button id="planActivate" class="primary">Activate plan</button>
+        <button id="planDeactivate" class="ghost">Deactivate</button>
+        <button id="planSave" class="ghost">Save draft</button>
+        <span class="note" id="planMsg"></span>
+      </div>
+    </div>
+  </div>
+
   <!-- entry patterns -->
   <div class="card wide">
     <div class="bucket-head" style="margin-bottom:12px">
       <h2 style="margin:0">Entry patterns</h2>
-      <span class="desc">availability computed by the EA (<code>IsOrderBtnAvailable</code>) — never recomputed here</span>
+      <span class="desc">availability from the EA (<code>IsOrderBtnAvailable</code>) — never recomputed here</span>
       <div class="spacer"></div>
       <div class="arm" id="armBox">
         <span class="note" id="armNote">remote commands disarmed</span>
@@ -96,6 +157,7 @@
     Contract <code id="ctrVer">—</code> · see <code>TRADING_SYSTEM.md</code>
   </footer>
 
+  <script src="/plan.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>

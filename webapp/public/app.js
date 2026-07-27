@@ -7,28 +7,12 @@
 
 const $ = (id) => document.getElementById(id);
 
-// Thesis buckets — see TRADING_SYSTEM.md §5.2. This is presentation only:
-// which patterns are *legal* comes from the EA, this just groups them by intent.
-const BUCKETS = [
-  { key: 'A', name: 'With-trend continuation',
-    desc: 'trend established — join pullbacks or breakouts',
-    ids: ['RM_BuyMktSw','RM_SellMktSw','RM_BuyLmtBOS','RM_SellLmtBOS',
-          'RM_BuyLmtBoR','RM_SellLmtBoR','RM_BuyStpBK','RM_SellStpBK',
-          'RM_BuyStpChC','RM_SellStpChC'] },
-  { key: 'B', name: 'Post-reversal',
-    desc: 'structure just flipped — first retrace of the new trend',
-    ids: ['RM_BuyLmtChR','RM_SellLmtChR'] },
-  { key: 'C', name: 'Reversal anticipation',
-    desc: 'pre-positioned for the break that confirms a flip',
-    ids: ['RM_BuyStpCH','RM_SellStpCH','RM_BuyStpCB','RM_SellStpCB'] },
-  { key: 'D', name: 'Mean reversion',
-    desc: 'price overextended outside the dealing range — fade it',
-    ids: ['RM_BuyMktUFV','RM_SellMktUFV'] },
-  { key: 'E', name: 'Level-based',
-    desc: "yesterday's range rather than intraday structure",
-    ids: ['RM_BuyLmtDK','RM_SellLmtDK','RM_BuyMkt','RM_SellMkt',
-          'RM_BuyLmt','RM_SellLmt','RM_BuyStp','RM_SellStp'] },
-];
+// Thesis buckets and plan evaluation live in plan.js so the same rules can be
+// reused elsewhere (and eventually mirrored into the EA for hard enforcement).
+const { BUCKETS, PLAN_DEFAULTS, evaluateSession, evaluatePattern } = window.RMPlan;
+
+let plan = { ...PLAN_DEFAULTS };
+let lastState = null;
 
 const TREND = { 1: ['BULLISH', 'up'], 2: ['BEARISH', 'down'] };
 const FLOW  = { 1: ['UP ▲', 'up'],    2: ['DOWN ▼', 'down'] };
@@ -52,7 +36,9 @@ const setTxt = (id, text, cls) => {
 };
 
 // ── pattern tiles ───────────────────────────────────────────────────
-function renderBuckets(patterns) {
+// A tile is only clickable on verdict 'go'. Everything else carries the
+// reason in its tooltip, so a blocked setup always explains itself.
+function renderBuckets(patterns, state, session) {
   const byId = Object.fromEntries((patterns ?? []).map((p) => [p.id, p]));
   const host = $('buckets');
   host.innerHTML = '';
@@ -60,33 +46,161 @@ function renderBuckets(patterns) {
   for (const b of BUCKETS) {
     const present = b.ids.map((id) => byId[id]).filter(Boolean);
     if (!present.length) continue;
-    const live = present.filter((p) => p.available).length;
+
+    const verdicts = present.map((p) => ({ p, ...evaluatePattern(p, plan, state, session) }));
+    const goCount = verdicts.filter((v) => v.verdict === 'go').length;
+    const inPlan = !plan.active || plan.buckets.includes(b.key);
 
     const wrap = document.createElement('div');
     wrap.className = 'bucket';
+    wrap.style.opacity = inPlan ? '1' : '.5';
     wrap.innerHTML =
       `<div class="bucket-head">
          <strong>${b.key} · ${b.name}</strong>
          <span class="desc">${b.desc}</span>
          <div class="spacer"></div>
-         <span class="desc">${live}/${present.length} available</span>
+         <span class="desc">${inPlan ? `${goCount} permitted now` : 'excluded by plan'}</span>
        </div>`;
 
     const tiles = document.createElement('div');
     tiles.className = 'tiles';
-    for (const p of present) {
+    for (const { p, verdict, reason } of verdicts) {
       const side = p.dir > 0 ? 'buy' : 'sell';
+      const cls = verdict === 'go'   ? 'ok ' + side
+                : verdict === 'plan' ? 'plan'
+                : 'blocked';
       const el = document.createElement('div');
-      el.className = `tile ${p.available ? 'ok ' + side : 'blocked'}`;
-      el.innerHTML = `${p.label}<span class="sub">${p.type}</span>`;
-      el.title = p.available
-        ? `${p.id} — available. Click to queue an arm command.`
-        : `${p.id} — gate not satisfied right now (see TRADING_SYSTEM.md §5.3)`;
-      if (p.available) el.onclick = () => queueArm(p);
+      el.className = `tile ${cls}`;
+      const sub = verdict === 'go' ? p.type
+                : verdict === 'plan' ? 'blocked by plan'
+                : verdict === 'locked' ? 'session locked'
+                : p.type;
+      el.innerHTML = `${p.label}<span class="sub">${sub}</span>`;
+      el.title = `${p.id}\n${reason}`;
+      if (verdict === 'go') el.onclick = () => queueArm(p);
       tiles.appendChild(el);
     }
     wrap.appendChild(tiles);
     host.appendChild(wrap);
+  }
+}
+
+// ── plan UI ─────────────────────────────────────────────────────────
+function renderBucketChooser() {
+  const host = $('pBuckets');
+  host.innerHTML = '';
+  for (const b of BUCKETS) {
+    const el = document.createElement('div');
+    const sel = plan.buckets.includes(b.key);
+    el.className = 'chip' + (sel ? ' sel' : '');
+    el.innerHTML = `${b.key} · ${b.name}<small>${b.desc}</small>`;
+    el.onclick = () => {
+      plan.buckets = sel ? plan.buckets.filter((k) => k !== b.key) : [...plan.buckets, b.key];
+      renderBucketChooser();
+    };
+    host.appendChild(el);
+  }
+}
+
+function planToForm() {
+  $('pBias').value      = plan.bias;
+  $('pMaxTrades').value = plan.maxTrades;
+  $('pMaxLoss').value   = plan.maxSessionLossUsd;
+  $('pMinDrange').value = plan.minDrangePct;
+  $('pWinStart').value  = plan.windowStart;
+  $('pWinEnd').value    = plan.windowEnd;
+  $('pH4').checked      = plan.requireH4Agree;
+  $('pNote').value      = plan.note;
+  renderBucketChooser();
+}
+
+function formToPlan() {
+  plan.bias              = $('pBias').value;
+  plan.maxTrades         = Number($('pMaxTrades').value) || 0;
+  plan.maxSessionLossUsd = Number($('pMaxLoss').value) || 0;
+  plan.minDrangePct      = Number($('pMinDrange').value) || 0;
+  plan.windowStart       = $('pWinStart').value.trim();
+  plan.windowEnd         = $('pWinEnd').value.trim();
+  plan.requireH4Agree    = $('pH4').checked;
+  plan.note              = $('pNote').value.trim();
+}
+
+async function savePlan(msg) {
+  await fetch('/api/plan', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(plan),
+  });
+  $('planMsg').textContent = msg;
+  setTimeout(() => ($('planMsg').textContent = ''), 3000);
+}
+
+$('planToggle').onclick = () => {
+  const ed = $('planEditor');
+  ed.hidden = !ed.hidden;
+  $('planToggle').textContent = ed.hidden ? 'edit' : 'close';
+};
+
+$('planSave').onclick = async () => { formToPlan(); await savePlan('draft saved'); };
+
+$('planActivate').onclick = async () => {
+  formToPlan();
+  plan.active = true;
+  plan.activatedAt = Date.now();
+  // Snapshot equity NOW — the session loss cap is measured against this.
+  plan.baselineEquity = lastState?.account?.equity ?? null;
+  plan.tradesTaken = 0;
+  await savePlan('plan activated — enforcement live');
+  $('planEditor').hidden = true;
+  $('planToggle').textContent = 'edit';
+};
+
+$('planDeactivate').onclick = async () => {
+  plan.active = false;
+  await savePlan('plan deactivated');
+};
+
+function renderPlanStatus(session) {
+  const pill = $('planPill');
+  if (!plan.active) {
+    pill.className = 'pill down';
+    $('planPillTxt').textContent = 'no active plan';
+  } else if (session.locked) {
+    pill.className = 'pill down';
+    $('planPillTxt').textContent = 'LOCKED';
+  } else {
+    pill.className = 'pill plan-on';
+    const bits = [plan.bias === 'both' ? 'both ways' : plan.bias,
+                  plan.buckets.join('')];
+    if (plan.maxTrades) bits.push(`${plan.tradesTaken}/${plan.maxTrades} trades`);
+    $('planPillTxt').textContent = bits.join(' · ');
+  }
+
+  const locks = $('planLocks');
+  locks.innerHTML = '';
+  for (const r of session.reasons) {
+    const d = document.createElement('div');
+    d.className = 'lock hard';
+    d.textContent = `STOP — ${r}`;
+    locks.appendChild(d);
+  }
+  // Advance warning at 70% of the loss cap, before it becomes a hard stop.
+  if (plan.active && !session.locked && session.lossSoFar > 0 && plan.maxSessionLossUsd > 0) {
+    const pct = session.lossSoFar / plan.maxSessionLossUsd;
+    if (pct >= 0.7) {
+      const d = document.createElement('div');
+      d.className = 'lock';
+      d.textContent = `WARNING — down $${Math.round(session.lossSoFar)} of your $${plan.maxSessionLossUsd} cap (${Math.round(pct * 100)}%)`;
+      locks.appendChild(d);
+    }
+  }
+  if (plan.active && plan.note) {
+    const d = document.createElement('div');
+    d.className = 'lock';
+    d.style.background = 'var(--plc)';
+    d.style.color = 'var(--text)';
+    d.textContent = `NOTE — ${plan.note}`;
+    locks.appendChild(d);
   }
 }
 
@@ -213,17 +327,31 @@ function render(payload) {
   setTxt('exArmed', ar.active ? `${ar.button}${ar.hidden ? ' (hidden)' : ''} @ ${fmt(ar.entry)}` : 'none',
          ar.active ? '' : 'mute');
 
-  renderBuckets(state.patterns);
+  // ── plan enforcement ──
+  const session = evaluateSession(plan, state);
+  renderPlanStatus(session);
+  renderBuckets(state.patterns, state, session);
 }
 
 async function poll() {
   try {
-    render(await fetch('/api/state').then((r) => r.json()));
+    const payload = await fetch('/api/state').then((r) => r.json());
+    lastState = payload.state;
+    render(payload);
   } catch {
     $('conn').className = 'pill down';
     $('connTxt').textContent = 'bridge unreachable';
   }
 }
 
-poll();
-setInterval(poll, 1000);
+async function boot() {
+  try {
+    const { plan: saved } = await fetch('/api/plan').then((r) => r.json());
+    if (saved) plan = { ...PLAN_DEFAULTS, ...saved };
+  } catch { /* no saved plan yet */ }
+  planToForm();
+  await poll();
+  setInterval(poll, 1000);
+}
+
+boot();
