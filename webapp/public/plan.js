@@ -14,6 +14,10 @@
 //   'plan'    the setup exists, but your plan forbids it — with a reason
 //   'locked'  a session-wide cap is hit; nothing is permitted
 
+// Wrapped in an IIFE: these are classic scripts sharing one global scope,
+// so top-level const/function here would collide with app.js and abort it
+// with a redeclaration SyntaxError. Only window.RMPlan is exported.
+(() => {
 const BUCKETS = [
   { key: 'A', name: 'With-trend continuation',
     desc: 'trend established — join pullbacks or breakouts',
@@ -161,3 +165,4 @@ function evaluatePattern(pattern, plan, state, session) {
 }
 
 window.RMPlan = { BUCKETS, BUCKET_OF, PLAN_DEFAULTS, evaluateSession, evaluatePattern, tradesTaken };
+})();

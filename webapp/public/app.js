@@ -5,6 +5,10 @@
 // find yourself wanting to calculate a swing/trend/FVG here — don't. Add it to
 // the EA's BuildStateJson() instead, so there is only one source of truth.
 
+// Wrapped in an IIFE so nothing here lands in global scope. Without this,
+// `const { BUCKETS, ... } = window.RMPlan` redeclares names plan.js already
+// defined globally, and the whole file fails to execute.
+(() => {
 const $ = (id) => document.getElementById(id);
 
 // Thesis buckets and plan evaluation live in plan.js so the same rules can be
@@ -19,28 +23,53 @@ let lastState = null;
 // localStorage so it's entered once per browser, and re-prompt on any 401.
 const TOKEN_KEY = 'rm_token';
 let token = localStorage.getItem(TOKEN_KEY) ?? '';
+let authBlocked = false;   // true while the server is rejecting us
 
-function promptForToken(message) {
-  const t = window.prompt(message ?? 'Bridge token (RM_TOKEN on the server):', '');
-  if (t === null) return false;
-  token = t.trim();
-  localStorage.setItem(TOKEN_KEY, token);
-  return true;
+// An in-page gate, deliberately NOT window.prompt: the poll loop runs once a
+// second, so a prompt-on-401 produced a modal every second and made the whole
+// page feel dead.
+function showAuthBar(msg) {
+  authBlocked = true;
+  $('authBar').hidden = false;
+  $('authMsg').textContent = msg ?? '';
 }
 
-/** fetch wrapper that attaches the token and recovers from a 401 once */
-async function api(path, opts = {}, retry = true) {
+function hideAuthBar() {
+  if (!authBlocked) return;
+  authBlocked = false;
+  $('authBar').hidden = true;
+  $('authMsg').textContent = '';
+}
+
+/** fetch wrapper that attaches the token and surfaces 401 via the auth bar */
+async function api(path, opts = {}) {
   const headers = { ...(opts.headers ?? {}) };
   if (token) headers['Authorization'] = `Bearer ${token}`;
   const res = await fetch(path, { ...opts, headers });
   if (res.status === 401) {
-    if (retry && promptForToken('Bridge rejected the token. Enter the server\'s RM_TOKEN:')) {
-      return api(path, opts, false);
-    }
+    showAuthBar(token ? 'That token was rejected by the server.' : 'Enter the server\'s RM_TOKEN.');
     throw new Error('unauthorised');
   }
+  hideAuthBar();
   return res;
 }
+
+$('authSave').onclick = async () => {
+  token = $('authInput').value.trim();
+  localStorage.setItem(TOKEN_KEY, token);
+  $('authInput').value = '';
+  $('authMsg').textContent = 'checking…';
+  try {
+    const { plan: saved } = await api('/api/plan').then((r) => r.json());
+    if (saved) plan = { ...PLAN_DEFAULTS, ...saved };
+    planToForm();
+    await poll();
+  } catch { /* api() already re-showed the bar with the reason */ }
+};
+
+$('authInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') $('authSave').click();
+});
 
 const TREND = { 1: ['BULLISH', 'up'], 2: ['BEARISH', 'down'] };
 const FLOW  = { 1: ['UP ▲', 'up'],    2: ['DOWN ▼', 'down'] };
@@ -173,6 +202,18 @@ $('planSave').onclick = async () => { formToPlan(); await savePlan('draft saved'
 
 $('planActivate').onclick = async () => {
   formToPlan();
+  // Without a live snapshot there's no equity to measure the loss cap against
+  // and no entry count to measure the trade cap against. Say so rather than
+  // activating a plan whose two hardest limits silently do nothing.
+  if (!lastState) {
+    const go = confirm(
+      'The EA is not connected yet.\n\n' +
+      'The session loss cap and trade cap need a live snapshot to baseline against, ' +
+      'so they will not be enforced until you re-activate with the EA running.\n\n' +
+      'Activate anyway (bias, buckets and window will still apply)?'
+    );
+    if (!go) return;
+  }
   plan.active = true;
   plan.activatedAt = Date.now();
   // Snapshot equity NOW — the session loss cap is measured against this.
@@ -263,8 +304,19 @@ function render(payload) {
   const { connected, stale, ageMs, state, versionMatch, eaVersion, contractVersion } = payload;
   $('ctrVer').textContent = contractVersion;
 
+  // The plan is a browser+server concern and must render whether or not the EA
+  // is connected — otherwise the whole planning UI is dead until MT is running,
+  // which is exactly backwards: you write the plan BEFORE the session.
+  const session = evaluateSession(plan, state);
+  renderPlanStatus(session);
+
   const conn = $('conn');
-  if (!state)        { conn.className = 'pill down';  $('connTxt').textContent = 'waiting for EA…'; return; }
+  if (!state) {
+    conn.className = 'pill down';
+    $('connTxt').textContent = 'waiting for EA…';
+    renderBuckets([], null, session);
+    return;
+  }
   if (stale)         { conn.className = 'pill stale'; $('connTxt').textContent = `stale ${Math.round(ageMs / 1000)}s`; }
   else if (connected){ conn.className = 'pill live';  $('connTxt').textContent = `live · ${Math.round(ageMs / 1000)}s ago`; }
 
@@ -358,31 +410,39 @@ function render(payload) {
   setTxt('exArmed', ar.active ? `${ar.button}${ar.hidden ? ' (hidden)' : ''} @ ${fmt(ar.entry)}` : 'none',
          ar.active ? '' : 'mute');
 
-  // ── plan enforcement ──
-  const session = evaluateSession(plan, state);
-  renderPlanStatus(session);
   renderBuckets(state.patterns, state, session);
 }
 
 async function poll() {
+  if (authBlocked) return;          // don't hammer a server that's rejecting us
   try {
     const payload = await api('/api/state').then((r) => r.json());
     lastState = payload.state;
     render(payload);
-  } catch {
+  } catch (e) {
     $('conn').className = 'pill down';
-    $('connTxt').textContent = 'bridge unreachable';
+    $('connTxt').textContent = e.message === 'unauthorised' ? 'token required' : 'bridge unreachable';
+    // Keep the plan usable even when the bridge is unreachable.
+    renderPlanStatus(evaluateSession(plan, null));
   }
 }
 
 async function boot() {
+  // Ask up front whether a token is needed, so the gate appears immediately
+  // instead of after a failed call.
+  const health = await fetch('/api/health').then((r) => r.json()).catch(() => null);
+  if (health?.authRequired && !token) showAuthBar('Enter the server\'s RM_TOKEN.');
+
   try {
     const { plan: saved } = await api('/api/plan').then((r) => r.json());
     if (saved) plan = { ...PLAN_DEFAULTS, ...saved };
-  } catch { /* no saved plan yet */ }
+  } catch { /* unauthenticated or no saved plan — the UI still works */ }
+
   planToForm();
+  renderPlanStatus(evaluateSession(plan, null));   // plan UI live from first paint
   await poll();
   setInterval(poll, 1000);
 }
 
 boot();
+})();
