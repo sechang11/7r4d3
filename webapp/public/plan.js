@@ -50,10 +50,26 @@ const PLAN_DEFAULTS = {
   minDrangePct: 0,
   windowStart: '',              // 'HH:MM' broker time, blank = no restriction
   windowEnd: '',
+  countAllSymbols: true,        // trade cap spans the account, not just this chart
   activatedAt: null,
   baselineEquity: null,
-  tradesTaken: 0,
+  tradesAtActivation: null,     // EA's entry count when the plan was activated
 };
+
+/**
+ * Trades taken since the plan was activated.
+ *
+ * Derived from the EA's own entry count rather than a counter we increment,
+ * so trades placed by clicking the chart — the ones most likely to be
+ * impulsive — count against the cap exactly like remote arms do.
+ */
+function tradesTaken(plan, state) {
+  const s = state?.session;
+  if (!s || plan?.tradesAtActivation == null) return 0;
+  const now = plan.countAllSymbols ? s.tradesTodayAll : s.tradesTodaySymbol;
+  if (now == null) return 0;
+  return Math.max(0, now - plan.tradesAtActivation);
+}
 
 // Broker wall-clock minutes-since-midnight from the EA's timestamp.
 // state.ts is broker server time, so read it in UTC to get broker hours.
@@ -75,7 +91,8 @@ const hhmmToMin = (s) => {
  */
 function evaluateSession(plan, state) {
   const reasons = [];
-  if (!plan?.active) return { locked: false, reasons, lossSoFar: null };
+  const taken = tradesTaken(plan, state);
+  if (!plan?.active) return { locked: false, reasons, lossSoFar: null, taken };
 
   // Realised+floating drawdown against the equity recorded at activation.
   let lossSoFar = null;
@@ -86,8 +103,8 @@ function evaluateSession(plan, state) {
     }
   }
 
-  if (plan.maxTrades > 0 && plan.tradesTaken >= plan.maxTrades) {
-    reasons.push(`trade cap hit — ${plan.tradesTaken}/${plan.maxTrades} taken`);
+  if (plan.maxTrades > 0 && taken >= plan.maxTrades) {
+    reasons.push(`trade cap hit — ${taken}/${plan.maxTrades} taken`);
   }
 
   if (plan.bias === 'standaside') reasons.push('plan says stand aside today');
@@ -99,7 +116,7 @@ function evaluateSession(plan, state) {
     if (!inWindow) reasons.push(`outside session window ${plan.windowStart}–${plan.windowEnd} broker time`);
   }
 
-  return { locked: reasons.length > 0, reasons, lossSoFar };
+  return { locked: reasons.length > 0, reasons, lossSoFar, taken };
 }
 
 /**
@@ -143,4 +160,4 @@ function evaluatePattern(pattern, plan, state, session) {
   return { verdict: 'go', reason: 'permitted by plan' };
 }
 
-window.RMPlan = { BUCKETS, BUCKET_OF, PLAN_DEFAULTS, evaluateSession, evaluatePattern };
+window.RMPlan = { BUCKETS, BUCKET_OF, PLAN_DEFAULTS, evaluateSession, evaluatePattern, tradesTaken };

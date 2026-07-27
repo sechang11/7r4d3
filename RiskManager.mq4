@@ -244,6 +244,8 @@ input string InpDiscordWebhook = "";  // Discord Webhook URL
 input string InpBridgeURL    = "";   // Web bridge base URL, blank = OFF (e.g. http://127.0.0.1:8787)
 input string InpBridgeToken  = "";   // Bridge shared secret (must match RM_TOKEN on the server)
 input int    InpStatePostSec = 3;    // Seconds between state POSTs
+input bool   InpAllowRemote  = false;// Allow remote ARM commands from the web app
+input int    InpCmdPollSec   = 2;    // Seconds between command polls (when remote allowed)
 
 //--- Dashboard layout constants
 #define PANEL_X         30
@@ -9167,6 +9169,40 @@ string BuildPatternsJson()
    return s;
 }
 
+//+------------------------------------------------------------------+
+//| Count position ENTRIES since the start of today's daily bar.     |
+//| MQL4 has no deals model, so "entries today" = trades still open   |
+//| that were opened today + trades closed today. Counting only the   |
+//| history would miss a position that is still running.              |
+//+------------------------------------------------------------------+
+int CountTradesToday(bool symbolOnly)
+{
+   datetime dayStart = iTime(_Symbol, PERIOD_D1, 0);
+   if(dayStart <= 0) return 0;
+   int n = 0;
+
+   // closed today (or opened today and since closed)
+   for(int i = OrdersHistoryTotal() - 1; i >= 0; i--)
+   {
+      if(!OrderSelect(i, SELECT_BY_POS, MODE_HISTORY)) continue;
+      if(OrderType() > OP_SELL) continue;              // skip deleted pendings
+      if(OrderOpenTime() < dayStart) continue;
+      if(symbolOnly && OrderSymbol() != _Symbol) continue;
+      n++;
+   }
+
+   // still open, opened today
+   for(int i = OrdersTotal() - 1; i >= 0; i--)
+   {
+      if(!OrderSelect(i, SELECT_BY_POS, MODE_TRADES)) continue;
+      if(OrderType() > OP_SELL) continue;              // skip pendings (not yet entries)
+      if(OrderOpenTime() < dayStart) continue;
+      if(symbolOnly && OrderSymbol() != _Symbol) continue;
+      n++;
+   }
+   return n;
+}
+
 string BuildStateJson()
 {
    double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
@@ -9293,6 +9329,13 @@ string BuildStateJson()
    j += "\"openReward\":"+ JNum(openRew,2);
    j += "},";
 
+   // ── session counters (drive the plan's trade cap) ──
+   j += "\"session\":{";
+   j += "\"tradesTodaySymbol\":" + IntegerToString(CountTradesToday(true)) + ",";
+   j += "\"tradesTodayAll\":"    + IntegerToString(CountTradesToday(false)) + ",";
+   j += "\"remoteAllowed\":"     + JBool(InpAllowRemote);
+   j += "},";
+
    // ── armed order (lines on chart, not yet sent) ──
    j += "\"armed\":{";
    j += "\"active\":" + JBool(g_linesActive) + ",";
@@ -9343,6 +9386,157 @@ void PostState()
       }
    }
    else warned = false;
+}
+
+//+==================================================================+
+//|                 WEB BRIDGE — REMOTE COMMANDS                     |
+//|------------------------------------------------------------------|
+//| Deliberate limits on what a remote command may do:                |
+//|                                                                   |
+//|  * ONLY the "arm" action exists. It draws the entry/SL/TP lines.  |
+//|    There is no remote "send order" — pressing Enter on the chart  |
+//|    stays a deliberate physical act. The whole point of this       |
+//|    system is fewer impulsive entries, not more convenient ones.   |
+//|  * InpAllowRemote must be true. Off by default; a compromised or  |
+//|    misconfigured server can do nothing while it is off.           |
+//|  * An arm is refused unless IsOrderBtnAvailable() agrees, so a    |
+//|    remote command can never bypass a pattern's own gate.          |
+//|  * The server dispatches each command exactly once, and we ack    |
+//|    every one, so a retry cannot double-arm.                       |
+//+==================================================================+
+
+// Minimal JSON readers. We control both ends of this channel and the
+// payload shape is fixed, so a full parser would be dead weight.
+string JsonGetStr(string src, string key)
+{
+   string pat = "\"" + key + "\":\"";
+   int i = StringFind(src, pat);
+   if(i < 0) return "";
+   i += StringLen(pat);
+   int j = StringFind(src, "\"", i);
+   if(j < 0) return "";
+   return StringSubstr(src, i, j - i);
+}
+
+long JsonGetInt(string src, string key)
+{
+   string pat = "\"" + key + "\":";
+   int i = StringFind(src, pat);
+   if(i < 0) return -1;
+   i += StringLen(pat);
+   int n = StringLen(src), j = i;
+   while(j < n)
+   {
+      ushort c = StringGetCharacter(src, j);
+      if((c < '0' || c > '9') && c != '-') break;
+      j++;
+   }
+   if(j == i) return -1;
+   return StringToInteger(StringSubstr(src, i, j - i));
+}
+
+string BridgeHeaders()
+{
+   string h = "Content-Type: application/json\r\n";
+   if(InpBridgeToken != "") h += "Authorization: Bearer " + InpBridgeToken + "\r\n";
+   return h;
+}
+
+//+------------------------------------------------------------------+
+//| Arm a pattern by button id — the same handlers the chart buttons  |
+//| use, so a remote arm and a click produce identical lines.         |
+//+------------------------------------------------------------------+
+bool ArmPatternRemote(string b, string &note)
+{
+   if(!IsOrderBtnAvailable(b)) { note = "gate not satisfied for " + b; return false; }
+
+   // Clear any previously armed setup first (mirrors the click path).
+   CancelHiddenOrder();
+   g_chochOrderActive = false;
+   g_lastOrderBtn  = b;
+   g_isHiddenOrder = false;
+
+   int d = (StringFind(b, "RM_Buy") == 0) ? +1 : -1;
+
+   if(b == "RM_BuyMkt"     || b == "RM_SellMkt")     { HandleOrderButton(d, 0); }
+   else if(b == "RM_BuyMktSw"  || b == "RM_SellMktSw")  { HandleSwingOrderButton(d, 0); }
+   else if(b == "RM_BuyMktUFV" || b == "RM_SellMktUFV") { HandleUfvReversionOrderButton(d); }
+   else if(b == "RM_BuyLmt"    || b == "RM_SellLmt")
+        { g_isHiddenOrder = g_isHiddenLmt; HandleOrderButton(d, 1); }
+   else if(b == "RM_BuyLmtDK"  || b == "RM_SellLmtDK")
+        { g_isHiddenOrder = g_isHiddenLmt; HandleDstkOrderButton(d); }
+   else if(b == "RM_BuyLmtBOS" || b == "RM_SellLmtBOS")
+        { g_isHiddenOrder = g_isHiddenLmt; HandleBosOrderButton(d); }
+   else if(b == "RM_BuyLmtChR" || b == "RM_SellLmtChR")
+        { g_isHiddenOrder = g_isHiddenLmt; HandleChochRetraceOrderButton(d); }
+   else if(b == "RM_BuyLmtBoR" || b == "RM_SellLmtBoR")
+        { g_isHiddenOrder = g_isHiddenLmt; HandleBosRetraceFvgOrderButton(d); }
+   else if(b == "RM_BuyStp"    || b == "RM_SellStp")
+        { g_isHiddenOrder = g_isHiddenStp; HandleOrderButton(d, 2); }
+   else if(b == "RM_BuyStpCH"  || b == "RM_SellStpCH")
+        { g_isHiddenOrder = g_isHiddenStp; HandleChochOrderButton(d); }
+   else if(b == "RM_BuyStpChC" || b == "RM_SellStpChC")
+        { g_isHiddenOrder = g_isHiddenStp; HandleChochContinuationOrderButton(d); }
+   else if(b == "RM_BuyStpBK"  || b == "RM_SellStpBK")
+        { g_isHiddenOrder = g_isHiddenStp; HandleBkoOrderButton(d); }
+   else if(b == "RM_BuyStpCB"  || b == "RM_SellStpCB")
+        { g_isHiddenOrder = g_isHiddenStp; HandleChBoOrderButton(d); }
+   else { g_lastOrderBtn = ""; note = "unknown button " + b; return false; }
+
+   // The handlers bail out silently on missing data; g_linesActive is the
+   // only honest confirmation that lines actually went on the chart.
+   if(!g_linesActive) { g_lastOrderBtn = ""; note = "handler produced no lines"; return false; }
+
+   note = "armed " + b;
+   ChartRedraw(0);
+   return true;
+}
+
+void AckCommand(long id, bool ok, string note)
+{
+   string body = "{\"id\":" + IntegerToString(id) +
+                 ",\"ok\":" + (ok ? "true" : "false") +
+                 ",\"result\":\"" + note + "\"}";
+   char post[], result[];
+   string rh;
+   StringToCharArray(body, post, 0, StringLen(body), CP_UTF8);
+   WebRequest("POST", InpBridgeURL + "/api/commands/ack", BridgeHeaders(), 1000,
+              post, result, rh);
+}
+
+//+------------------------------------------------------------------+
+//| Poll for one pending command and execute it.                     |
+//+------------------------------------------------------------------+
+void PollCommands()
+{
+   if(InpBridgeURL == "" || !InpAllowRemote) return;
+   static datetime lastPoll = 0;
+   int gap = (InpCmdPollSec < 1) ? 1 : InpCmdPollSec;
+   if(TimeCurrent() - lastPoll < gap) return;
+   lastPoll = TimeCurrent();
+
+   char post[], result[];
+   string rh;
+   int res = WebRequest("GET", InpBridgeURL + "/api/commands/next", BridgeHeaders(), 1000,
+                        post, result, rh);
+   if(res != 200) return;
+
+   string body = CharArrayToString(result, 0, ArraySize(result), CP_UTF8);
+   if(StringFind(body, "\"command\":null") >= 0) return;   // nothing queued
+
+   long id = JsonGetInt(body, "id");
+   if(id < 0) return;
+
+   string action = JsonGetStr(body, "action");
+   string button = JsonGetStr(body, "button");
+   string note   = "";
+   bool   ok     = false;
+
+   if(action == "arm") ok = ArmPatternRemote(button, note);
+   else                note = "unsupported action: " + action;
+
+   Print("RM bridge: command #", id, " ", action, " ", button, " -> ", ok ? "OK" : "REFUSED", " (", note, ")");
+   AckCommand(id, ok, note);
 }
 
 //+------------------------------------------------------------------+
@@ -10318,4 +10512,5 @@ void OnTimer()
    CheckSmartTPScore();
    CheckCTrendAlert();
    PostState();          // web bridge: throttled state snapshot
+   PollCommands();       // web bridge: remote ARM commands (opt-in)
 }

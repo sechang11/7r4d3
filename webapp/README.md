@@ -129,13 +129,34 @@ All routes below require the token except `/api/health`.
 
 ### Command safety
 
-- Every command gets a unique incrementing id.
-- `/api/commands/next` dispatches a command **once** and flips it to
-  `dispatched`. A duplicate or retried poll returns `null`, so a network retry
-  can never double-fire an order.
-- The EA acks by id; results land in `data/journal.jsonl`.
-- The dashboard's **ARM REMOTE** toggle is off on every page load. While
-  disarmed, clicking a pattern does nothing.
+There are four independent gates between a click in the browser and lines on
+your chart. Any one of them stops it.
+
+| # | Gate | Where |
+|---|---|---|
+| 1 | **ARM REMOTE** toggle, off on every page load | browser |
+| 2 | Valid `RM_TOKEN` | server |
+| 3 | Command dispatched **once**; a retried poll returns `null` | server |
+| 4 | `InpAllowRemote = false` by default | EA |
+| 5 | `IsOrderBtnAvailable()` must still agree | EA |
+
+**The only remote action is `arm`** — it draws the entry/SL/TP lines. There is
+deliberately no remote "send order": pressing Enter on the chart stays a
+physical act. The point of this system is fewer impulsive entries, not more
+convenient ones.
+
+The EA acks every command with an outcome, and the whole lifecycle
+(queued → dispatched → ack) lands in `data/journal.jsonl`.
+
+### Trade counting
+
+`session.tradesTodayAll` / `tradesTodaySymbol` come from the EA's own trade
+history — **not** from a counter the web app increments. That means trades you
+place by clicking the chart (the ones most likely to be impulsive) count against
+the plan's cap exactly like remote arms do.
+
+The plan snapshots the count at activation (`tradesAtActivation`), so activating
+mid-session counts from that moment rather than from midnight.
 
 ---
 
@@ -166,7 +187,8 @@ webapp/
 | Game-plan builder + enforcement | ✅ web-side |
 | Auth (`RM_TOKEN`) + fail-safe bind | ✅ |
 | Railway deploy config | ✅ |
-| EA command poller | ⬜ next |
-| `tradesTaken` from EA deal history | ⬜ |
-| Definitions extractor (MQL → JSON) | ⬜ |
+| EA command poller (`arm` only, opt-in) | ✅ |
+| Trade count from EA history | ✅ |
+| Definitions extractor (MQL → JSON) | ⬜ next |
 | TS engine port + conformance harness | ⬜ |
+| EA-side hard enforcement of the plan | ⬜ |

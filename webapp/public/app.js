@@ -177,7 +177,10 @@ $('planActivate').onclick = async () => {
   plan.activatedAt = Date.now();
   // Snapshot equity NOW — the session loss cap is measured against this.
   plan.baselineEquity = lastState?.account?.equity ?? null;
-  plan.tradesTaken = 0;
+  // Snapshot the EA's entry count so mid-session activation counts from here.
+  plan.tradesAtActivation = plan.countAllSymbols
+    ? (lastState?.session?.tradesTodayAll ?? 0)
+    : (lastState?.session?.tradesTodaySymbol ?? 0);
   await savePlan('plan activated — enforcement live');
   $('planEditor').hidden = true;
   $('planToggle').textContent = 'edit';
@@ -200,7 +203,7 @@ function renderPlanStatus(session) {
     pill.className = 'pill plan-on';
     const bits = [plan.bias === 'both' ? 'both ways' : plan.bias,
                   plan.buckets.join('')];
-    if (plan.maxTrades) bits.push(`${plan.tradesTaken}/${plan.maxTrades} trades`);
+    if (plan.maxTrades) bits.push(`${session.taken}/${plan.maxTrades} trades`);
     $('planPillTxt').textContent = bits.join(' · ');
   }
 
