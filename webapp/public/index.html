@@ -159,6 +159,39 @@
     <div id="buckets"></div>
   </div>
 
+  <!-- EA source -->
+  <div class="card wide" style="margin-top:14px">
+    <div class="bucket-head" style="margin-bottom:12px">
+      <h2 style="margin:0">EA source</h2>
+      <span class="desc">download the current code, then compile it in MetaEditor</span>
+      <div class="spacer"></div>
+      <span id="srcVerdict" class="pill down"><span class="dot"></span><span id="srcVerdictTxt">checking…</span></span>
+    </div>
+
+    <div class="srcRow">
+      <div class="srcFile">
+        <strong>RiskManager.mq5</strong> <span class="desc">MetaTrader 5</span>
+        <div class="desc" id="srcMeta5">—</div>
+        <button class="primary" id="srcGet5" disabled>Download .mq5</button>
+      </div>
+      <div class="srcFile">
+        <strong>RiskManager.mq4</strong> <span class="desc">MetaTrader 4</span>
+        <div class="desc" id="srcMeta4">—</div>
+        <button class="primary" id="srcGet4" disabled>Download .mq4</button>
+      </div>
+    </div>
+
+    <ol class="srcSteps">
+      <li>Download the file for your platform.</li>
+      <li>Save it into your terminal's <code>MQL5/Experts</code> (or <code>MQL4/Experts</code>) folder,
+          replacing the old one. Find it via <em>File → Open Data Folder</em>.</li>
+      <li>Open it in MetaEditor and press <kbd>F7</kbd> to compile. Expect 0 errors, 0 warnings.</li>
+      <li>Remove the EA from your chart and drag it back on, so the new build loads.</li>
+      <li>Re-enter your inputs if prompted — the webhook and bridge token are not stored in the file.</li>
+    </ol>
+    <div class="desc" id="srcMsg"></div>
+  </div>
+
   <footer>
     EA is the single source of truth — this page renders its state and never recomputes it.
     Contract <code id="ctrVer">—</code> · see <code>TRADING_SYSTEM.md</code>

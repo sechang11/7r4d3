@@ -135,6 +135,44 @@ const appendJournal = (entry) => {
   }
 };
 
+// ── EA source distribution ─────────────────────────────────────────
+// Lets a client pull the current .mq5 / .mq4 from the running bridge,
+// save it into MQL5/Experts and recompile. The files ship in the image
+// (Nixpacks copies the repo), so what's served is exactly what this
+// deployment was built from.
+const SRC_ROOT = path.join(__dirname, '..');
+const SOURCES = {
+  mq5: 'RiskManager.mq5',
+  mq4: 'RiskManager.mq4',
+};
+
+// Read RM_VERSION out of the file itself rather than trusting a constant,
+// so the version shown can never drift from the file being handed out.
+const parseEaVersion = (text) =>
+  text.match(/#define\s+RM_VERSION\s+"([^"]+)"/)?.[1] ?? null;
+
+function sourceMeta() {
+  const out = {};
+  for (const [key, name] of Object.entries(SOURCES)) {
+    const file = path.join(SRC_ROOT, name);
+    try {
+      const st = fs.statSync(file);
+      const text = fs.readFileSync(file, 'utf8');
+      out[key] = {
+        name,
+        available: true,
+        bytes: st.size,
+        modified: st.mtime.toISOString(),
+        version: parseEaVersion(text),
+        sha256: crypto.createHash('sha256').update(text).digest('hex').slice(0, 12),
+      };
+    } catch {
+      out[key] = { name, available: false };
+    }
+  }
+  return out;
+}
+
 const MIME = {
   '.html': 'text/html; charset=utf-8',
   '.js':   'text/javascript; charset=utf-8',
@@ -246,6 +284,34 @@ const server = http.createServer(async (req, res) => {
 
     if (p === '/api/commands' && req.method === 'GET') {
       return send(res, 200, { commands: commands.slice(-50) });
+    }
+
+    // ---- EA source: metadata + download --------------------------
+    if (p === '/api/source' && req.method === 'GET') {
+      return send(res, 200, { sources: sourceMeta() });
+    }
+
+    if (p.startsWith('/api/source/') && req.method === 'GET') {
+      // Whitelist by key — never resolve a caller-supplied path, or this
+      // becomes an arbitrary file reader for anyone holding the token.
+      const key = p.slice('/api/source/'.length);
+      const name = SOURCES[key];
+      if (!name) return send(res, 404, { error: 'unknown source' });
+
+      let buf;
+      try {
+        buf = fs.readFileSync(path.join(SRC_ROOT, name));
+      } catch {
+        return send(res, 404, { error: `${name} is not present in this deployment` });
+      }
+      res.writeHead(200, {
+        'Content-Type': 'text/plain; charset=utf-8',
+        'Content-Disposition': `attachment; filename="${name}"`,
+        'Content-Length': buf.length,
+        'Cache-Control': 'no-store',
+      });
+      appendJournal({ type: 'source_download', file: name });
+      return res.end(buf);
     }
 
     // ---- game plan (persisted) -----------------------------------

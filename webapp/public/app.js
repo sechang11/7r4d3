@@ -63,6 +63,7 @@ $('authSave').onclick = async () => {
     const { plan: saved } = await api('/api/plan').then((r) => r.json());
     if (saved) plan = { ...PLAN_DEFAULTS, ...saved };
     planToForm();
+    await loadSourceMeta();
     await poll();
   } catch { /* api() already re-showed the bar with the reason */ }
 };
@@ -411,7 +412,72 @@ function render(payload) {
          ar.active ? '' : 'mute');
 
   renderBuckets(state.patterns, state, session);
+  renderSrcVerdict();
 }
+
+// ── EA source ───────────────────────────────────────────────────────
+let srcMeta = null;
+
+const kb = (n) => (n / 1024).toFixed(0) + ' KB';
+
+async function loadSourceMeta() {
+  try {
+    const { sources } = await api('/api/source').then((r) => r.json());
+    srcMeta = sources;
+  } catch { return; }
+
+  for (const [key, id, btn] of [['mq5', 'srcMeta5', 'srcGet5'], ['mq4', 'srcMeta4', 'srcGet4']]) {
+    const m = srcMeta[key];
+    if (m?.available) {
+      $(id).textContent = `v${m.version ?? '?'} · ${kb(m.bytes)} · ${m.sha256} · ${new Date(m.modified).toLocaleDateString()}`;
+      $(btn).disabled = false;
+    } else {
+      $(id).textContent = 'not present in this deployment';
+      $(btn).disabled = true;
+    }
+  }
+  renderSrcVerdict();
+}
+
+// Compare what the connected EA reports against what this bridge is serving,
+// so "your EA is out of date" is a fact rather than a guess.
+function renderSrcVerdict() {
+  const latest = srcMeta?.mq5?.version;
+  const running = lastState?.v;
+  const pill = $('srcVerdict');
+  const txt = $('srcVerdictTxt');
+  if (!latest)          { pill.className = 'pill down';  txt.textContent = 'source unavailable'; return; }
+  if (!running)         { pill.className = 'pill stale'; txt.textContent = `latest v${latest} · EA not connected`; return; }
+  if (running === latest) { pill.className = 'pill ok';  txt.textContent = `EA up to date · v${running}`; return; }
+  pill.className = 'pill down';
+  txt.textContent = `EA is v${running}, latest is v${latest} — update`;
+}
+
+// The download must carry the auth header, so a plain <a href> won't do;
+// fetch it and hand the browser a blob instead.
+async function downloadSource(key) {
+  $('srcMsg').textContent = 'downloading…';
+  try {
+    const res = await api(`/api/source/${key}`);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = srcMeta?.[key]?.name ?? `RiskManager.${key}`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    $('srcMsg').textContent = `Saved ${a.download}. Now compile it in MetaEditor (F7) and re-attach the EA.`;
+  } catch (e) {
+    $('srcMsg').textContent = e.message === 'unauthorised'
+      ? 'Enter the bridge token first.'
+      : 'Download failed — is the file present in this deployment?';
+  }
+}
+
+$('srcGet5').onclick = () => downloadSource('mq5');
+$('srcGet4').onclick = () => downloadSource('mq4');
 
 async function poll() {
   if (authBlocked) return;          // don't hammer a server that's rejecting us
@@ -440,6 +506,7 @@ async function boot() {
 
   planToForm();
   renderPlanStatus(evaluateSession(plan, null));   // plan UI live from first paint
+  await loadSourceMeta();
   await poll();
   setInterval(poll, 1000);
 }

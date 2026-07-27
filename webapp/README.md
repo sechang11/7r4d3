@@ -132,7 +132,25 @@ All routes below require the token except `/api/health`.
 | POST | `/api/commands` | web | queue a command |
 | GET | `/api/commands` | web | recent command log |
 | GET/POST | `/api/plan` | web | load / save the session game plan |
+| GET | `/api/source` | web | EA source metadata (version, size, sha, mtime) |
+| GET | `/api/source/mq5` \| `/mq4` | web | download the EA source as an attachment |
 | GET | `/api/health` | — | liveness + contract version |
+
+### EA source distribution
+
+The dashboard's **EA source** card serves the `.mq5` / `.mq4` that this
+deployment was built from, so a user can pull the current code, compile it
+locally and re-attach.
+
+- Version, size and a short sha256 are read **from the file itself** rather than
+  a constant, so what's displayed can't drift from what's handed out.
+- The card compares the connected EA's `RM_VERSION` against the served file and
+  says plainly whether the EA is out of date.
+- Downloads are token-gated like every other `/api` route, and the filename is
+  whitelisted by key — a caller-supplied path is never resolved, so this can't
+  become an arbitrary file reader.
+- Secrets aren't in the source (the webhook default is blank), so nothing
+  sensitive is distributed.
 
 ### Command safety
 
