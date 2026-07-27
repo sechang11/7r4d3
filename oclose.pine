@@ -1,0 +1,1127 @@
+//@version=5
+//@author=Kashix
+indicator("oclosev2", "", max_lines_count=500, overlay=true)
+
+a=false
+
+truncate(number, decimals) =>
+    factor = math.pow(10, decimals)
+    int(number * factor) / factor
+
+
+// var midnightopen = 0.0
+// midnightopen := (hour == 23 and minute == 00)? open : midnightopen
+// plot(hour == 00 or hour == 1 or hour == 2 or hour == 3 or hour == 4 or hour == 23? midnightopen : na, title="midnight open", style=plot.style_cross, color=color.new(#00332a,0), linewidth=3)
+// var nyopen = 0.0
+// nyopen := (hour == 8 and minute == 30)? open : nyopen
+// plot((hour == 8 and minute >29) or hour == 10 or hour == 11 or hour == 12 or hour == 13 or hour == 9? nyopen : na, title="ny open", style=plot.style_cross, color=color.new(#00332a,0), linewidth=3)
+// plot(1, color=(a ? color.red : na))
+
+// 1 minute chart 15m open
+// var m15hi1 = 0.0
+// var m15lo1 = 0.0
+
+// m15hi1 := (barstate.isconfirmed and (minute == 14 or minute == 29 or minute == 44 or minute == 59)? close + (syminfo.mintick*2): m15hi1) 
+// m15lo1 := m15hi1 - (syminfo.mintick*4) //(barstate.isconfirmed and (minute == 14 or minute == 29 or minute == 44 or minute == 59)? low : m15lo1) //and hour != 12?
+
+// m15hi1Plot = plot(m15hi1, "Highs", color=(a ? color.red : na))
+// m15lo1Plot = plot(m15lo1, "Lows", color=(a ? color.red : na))
+// fill(m15hi1Plot, m15lo1Plot, color.new(#0d47a1,70), fillgaps=true)
+
+
+//1 minute chart 1 hour
+// var h1hi1b = 0.0
+// var h1lo1b = 0.0
+// h1min=timeframe.period=='11'?45:timeframe.period=='5'?55:na //11 to 1
+// h1hi1b := (barstate.isconfirmed and minute==h1min? close + (syminfo.mintick*5): h1hi1b)
+// h1lo1b := h1hi1b - (syminfo.mintick*10) //(barstate.isconfirmed and minute == 59? low : h1lo1b) //and hour != 12?
+
+// h1hi1Plotb = plot(h1hi1b, "H1b Highs", color=(a? color.red : na))
+// h1lo1Plotb = plot(h1lo1b, "H1b Lows", color=(a? color.red : na))
+// fill(h1hi1Plotb, h1lo1Plotb, color.new(color.navy,42), fillgaps=true)
+
+//15 minute chart 4 hour
+// var h4hi1b = 0.0
+// var h4lo1b = 0.0
+// m15min=timeframe.period=='11'?45:timeframe.period=='5'?55:na 
+// h4hi1b := (barstate.isconfirmed and minute==m15min and hour == 4 or hour == 8 or hour == 12 or hour == 17 or hour == 20 or hour == 0? close + (syminfo.mintick*5): h4hi1b)
+// h4lo1b := h4hi1b - (syminfo.mintick*10) //(barstate.isconfirmed and minute == 59? low : h1lo1b) //and hour != 12?
+
+// h4hi1Plotb = plot(h4hi1b, "H4b Highs", color=(a? color.red : na))
+// h4lo1Plotb = plot(h4lo1b, "H4b Lows", color=(a? color.red : na))
+// fill(h4hi1Plotb, h4lo1Plotb, color.new(color.black,22), fillgaps=true)
+
+//1 minute chart 1 hour - 1st candle open
+// var h1hio = 0.0
+// var h1loo = 0.0//99999999.99
+
+// if timeframe.period=='1' and minute == 0
+//     h1hio := high > h1hio? high : h1hio
+//     h1loo := low < h1loo? low : h1loo
+// else if timeframe.period=='1' and minute == 59
+//     h1hio := 0.0
+//     h1loo := 999999999.99
+// h1hi1Ploto = plot(h1hio, "H1 high open", color=(a or (timeframe.period != '1')? color.red : na))
+// h1lo1Ploto = plot(h1loo, "H1 low open", color=(a or (timeframe.period != '1')? color.red : na))
+// fill(h1hi1Ploto, h1lo1Ploto, color.new(color.navy,60), fillgaps=true)
+
+//1 minute chart 4 hour - 1st candle open
+// var h1xhio = 0.0
+// var h1xloo = 0.0//99999999.99
+
+// if timeframe.period=='1' and minute == 0 and (hour == 5 or hour == 9 or hour == 13 or hour == 17 or hour == 21 or hour == 1)
+//     h1xhio := high > h1xhio? high : h1xhio
+//     h1xloo := low < h1xloo? low : h1xloo
+// else if timeframe.period=='1' and minute == 59 and (hour == 4 or hour == 8 or hour == 12 or hour == 15 or hour == 20 or hour == 0)
+//     h1xhio := 0.0
+//     h1xloo := 999999999.99
+// h1xhi1Ploto = plot(h1xhio, "H1 high open for h4", color=(a or (timeframe.period != '1')? color.red : na))
+// h1xlo1Ploto = plot(h1xloo, "H1 low open for h4", color=(a or (timeframe.period != '1')? color.red : na))
+// fill(h1xhi1Ploto, h1xlo1Ploto, color.new(color.black,60), fillgaps=true)
+
+
+// var h1hi1 = 0.0
+// var h1lo1 = 0.0
+
+// h1hi1 := (barstate.isconfirmed and minute == 55? high : h1hi1)
+// h1lo1 := (barstate.isconfirmed and minute == 55? low : h1lo1) //and hour != 12?
+
+// h1hi1Plot = plot(h1hi1, "Highs", color=(a ? color.red : na))
+// h1lo1Plot = plot(h1lo1, "Lows", color=(a ? color.red : na))
+// fill(h1hi1Plot, h1lo1Plot, color.navy, fillgaps=true)
+
+
+
+
+// h4hi1Plotb = plot(h4hi1, "Highs", color=(a ? color.red : na), offset=-240/timeframe.multiplier)
+// h4lo1Plotb = plot(h4lo1, "Lows", color=(a ? color.red : na), offset=-240/timeframe.multiplier)
+// fill(h4hi1Plotb, h4lo1Plotb, timeframe.period == '1' or timeframe.period == '5' ? color.new(color.black,70):na, fillgaps=true)
+
+// var foresth4hi1 = 0.0
+// var foresth4lo1 = 0.0
+
+// foresth4hi1 := (timeframe.isintraday and barstate.isconfirmed and minute == 55 and hour == 12? high : foresth4hi1)
+// foresth4lo1 := (timeframe.isintraday and barstate.isconfirmed and minute == 55 and hour == 12? low : foresth4lo1)
+
+// foresth4hi1Plot = plot(foresth4hi1, "Highs", color=(a ? color.red : na))
+// foresth4lo1Plot = plot(foresth4lo1, "Lows", color=(a ? color.red : na))
+// fill(foresth4hi1Plot, foresth4lo1Plot, color.orange, fillgaps=true) //#1b5e20
+
+// var m15foresth4hi1 = 0.0
+// var m15foresth4lo1 = 0.0
+
+// m15foresth4hi1 := (timeframe.isintraday and barstate.isconfirmed and minute == 00 and hour == 13? high : m15foresth4hi1)
+// m15foresth4lo1 := (timeframe.isintraday and barstate.isconfirmed and minute == 00 and hour == 13? low : m15foresth4lo1)
+
+// m15foresth4hi1Plot = plot(m15foresth4hi1, "Highs", color=(a ? color.red : na))
+// m15foresth4lo1Plot = plot(m15foresth4lo1, "Lows", color=(a ? color.red : na))
+// fill(m15foresth4hi1Plot, m15foresth4lo1Plot, timeframe.period == '15'? color.orange:na, fillgaps=true) //#1b5e20 green
+
+
+
+
+// bgcolor(timeframe.period == '60' and (hour == 4 or hour == 8 or hour == 12 or hour == 16 or hour == 20 or hour == 0)? color.new(#801922, 80) : na, show_last = 8, title = "60min - last 4hour divider",offset=4)
+
+// bgcolor(timeframe.period == '15' and (hour == 4 or hour == 8 or hour == 12 or hour == 15 or hour == 20 or hour == 0) and minute == 45? color.black : na, show_last = 16, title = "15min - last 4hour divider")
+// bgcolor(timeframe.period == '15' and (hour == 4 or hour == 8 or hour == 12 or hour == 15 or hour == 20 or hour == 0) and minute == 45? color.black : na, show_last = 16, offset = 17, title = "15min - last 4hour divider end")
+
+// bgcolor(timeframe.period == '15' and minute == 45? color.new(#801922, 80) : na, show_last = 4, title = "15min - last 1hour divider")
+// bgcolor(timeframe.period == '15' and minute == 45? color.new(#801922, 80) : na, show_last = 4, offset=5, title = "15min - last 1hour divider end")
+
+// bgcolor(timeframe.period == '5' and minute == 55? color.new(#801922, 80) : na, show_last = 12, title = "5min - last 1hour divider")
+// bgcolor(timeframe.period == '5' and minute == 55? color.new(#801922, 80) : na, show_last = 12, offset=13, title = "5min - last 1hour divider end")
+bgcolor(timeframe.period == '1' and (minute == 14 or minute == 29 or minute == 44 or minute == 59)? color.new(color.blue,80) : na, show_last = 15, title = "1min - last 15min divider")
+bgcolor(timeframe.period == '1' and (minute == 14 or minute == 29 or minute == 44 or minute == 59)? color.new(color.blue,80) : na, show_last = 15, offset=16, title = "1min - last 15min divider end")
+
+//t1 = time(timeframe.period, "0000-0000:1234567")
+//bgcolor(t1 ? color.green : na)
+
+// t1 = time(timeframe.period, "0830-1500:1234567") //(timeframe.period == '15' or timeframe.period == '5' or timeframe.period == '30') and 
+// bgcolor(t1 and (timeframe.period == '15' or timeframe.period == '5' or timeframe.period == '1')? color.new(#deb657,50) : na)
+
+// t1b = time(timeframe.period, "0800-1600:1234567")
+// bgcolor(t1b and (timeframe.period == '60')? color.new(#deb657,50) : na)
+// newcolor=color.new(color.black,95)
+
+// h41 = time(timeframe.period, "0855-0900:1234567") //(timeframe.period == '15' or timeframe.period == '5' or timeframe.period == '30') and 
+// bgcolor(h41 and (timeframe.period == '15' or timeframe.period == '5' or timeframe.period == '1')? newcolor : na, offset=0)
+// h42 = time(timeframe.period, "1255-1300:1234567") //(timeframe.period == '15' or timeframe.period == '5' or timeframe.period == '30') and 
+// bgcolor(h42 and (timeframe.period == '15' or timeframe.period == '5' or timeframe.period == '1')? color.new(#801922, 40) : na, offset=0)
+// h43 = time(timeframe.period, "1555-1600:1234567") //(timeframe.period == '15' or timeframe.period == '5' or timeframe.period == '30') and 
+// // bgcolor(h43 and (timeframe.period == '15' or timeframe.period == '5' or timeframe.period == '1')? newcolor : na, offset=0)
+// h44 = time(timeframe.period, "2055-2100:1234567") //(timeframe.period == '15' or timeframe.period == '5' or timeframe.period == '30') and 
+// bgcolor(h44 and (timeframe.period == '15' or timeframe.period == '5' or timeframe.period == '1')? color.new(#801922, 40) : na, offset=0)
+// h45 = time(timeframe.period, "0055-0100:1234567") //(timeframe.period == '15' or timeframe.period == '5' or timeframe.period == '30') and 
+// bgcolor(h45 and (timeframe.period == '15' or timeframe.period == '5' or timeframe.period == '1')? newcolor : na, offset=0)
+// h46 = time(timeframe.period, "0455-0500:1234567") //(timeframe.period == '15' or timeframe.period == '5' or timeframe.period == '30') and 
+// bgcolor(h46 and (timeframe.period == '15' or timeframe.period == '5' or timeframe.period == '1')? newcolor : na, offset=0)
+
+// //h4 columns in m5
+// bhone = time(timeframe.period, "0855-0900:1234567") //(timeframe.period == '15' or timeframe.period == '5' or timeframe.period == '30') and 
+// bgcolor(bhone and (timeframe.period == '15' or timeframe.period == '5' or timeframe.period == '1')? newcolor : na, offset=1380 / timeframe.multiplier)
+// bhtwo = time(timeframe.period, "1255-1300:1234567") //(timeframe.period == '15' or timeframe.period == '5' or timeframe.period == '30') and 
+// bgcolor(bhtwo and (timeframe.period == '15' or timeframe.period == '5' or timeframe.period == '1')? color.new(#801922, 40) : na, offset=1380 / timeframe.multiplier)
+// bh41 = time(timeframe.period, "1555-1600:1234567") //(timeframe.period == '15' or timeframe.period == '5' or timeframe.period == '30') and 
+// // bgcolor(bh41 and (timeframe.period == '15' or timeframe.period == '5' or timeframe.period == '1')? newcolor : na, offset=1380 / timeframe.multiplier)
+// bh44 = time(timeframe.period, "2055-2100:1234567") //(timeframe.period == '15' or timeframe.period == '5' or timeframe.period == '30') and 
+// bgcolor(bh44 and (timeframe.period == '15' or timeframe.period == '5' or timeframe.period == '1')? color.new(#801922, 40) : na, offset=1380 / timeframe.multiplier)
+// bh45 = time(timeframe.period, "0055-0100:1234567") //(timeframe.period == '15' or timeframe.period == '5' or timeframe.period == '30') and 
+// bgcolor(bh45 and (timeframe.period == '15' or timeframe.period == '5' or timeframe.period == '1')? newcolor : na, offset=1380 / timeframe.multiplier)
+// bh46 = time(timeframe.period, "0455-0500:1234567") //(timeframe.period == '15' or timeframe.period == '5' or timeframe.period == '30') and 
+// bgcolor(bh46 and (timeframe.period == '15' or timeframe.period == '5' or timeframe.period == '1')? newcolor : na, offset=1380 / timeframe.multiplier)
+
+
+// var m99 = 0
+// m99 := minute == 59 ? 1 : 0
+// bgcolor(m99 and (timeframe.period == '1')? newcolor : na, offset=120)
+
+// plot(barstate.ishistory and timeframe.period == 'D' or timeframe.period == '240' or timeframe.period == '60' or timeframe.period == '15'? W1Low : na, style=plot.style_stepline, color=color.black, title="M1 Low", offset=0, transp=0, linewidth=1)
+
+var oc_close = 0.0
+var oc_open = 0.0
+
+// oc_close := (timeframe.isintraday and barstate.isconfirmed and minute == 00 and hour == 20? D1closeo : oc_close)
+// oc_open := (timeframe.isintraday and barstate.isconfirmed and minute == 00 and hour == 20? D1openo : oc_open)
+
+// oc_closePlot = plot(oc_close, "Highs", color=(a ? color.red : na))
+// oc_openPlot = plot(oc_open, "Lows", color=(a ? color.red : na))
+// fill(oc_closePlot, oc_openPlot, timeframe.period == '15'? color.orange:na, fillgaps=true) //#1b5e20 green
+
+
+//h4 open as m5 candle
+// m5high = security(syminfo.tickerid, '5', high, lookahead=true)
+// m5low = security(syminfo.tickerid, '5', low, lookahead=true)
+// var h4hi1 = 0.0
+// var h4lo1 = 0.0
+// h4hi1 := (timeframe.isintraday and barstate.isconfirmed and minute == 55 and (hour == 12 or hour == 20 or hour == 00 or hour == 04 or hour == 08) or (timeframe.isintraday and barstate.isconfirmed and minute == 00 and hour == 17)? m5high : h4hi1)
+// h4lo1 := (timeframe.isintraday and barstate.isconfirmed and minute == 55 and (hour == 12 or hour == 20 or hour == 00 or hour == 04 or hour == 08) or (timeframe.isintraday and barstate.isconfirmed and minute == 00 and hour == 17)? m5low : h4lo1)
+
+// h4hi1Plot = plot(h4hi1, "H4op Hi", color=(a ? color.red : na))
+// h4lo1Plot = plot(h4lo1, "H4op Lo", color=(a ? color.red : na))
+// fill(h4hi1Plot, h4lo1Plot, timeframe.period=='1' or timeframe.period=='5'? color.new(color.black,60):na, fillgaps=true)
+
+// h1 chart - 4h open
+// var h4h1hi = 0.0
+// var h4h1lo = 0.0
+
+// h4open = security(syminfo.tickerid, '240', open, lookahead=true)
+
+// h4h1hi := timeframe.period=='60'? h4open + (syminfo.mintick*15) : h4h1hi
+// h4h1lo := timeframe.period=='60'? h4open - (syminfo.mintick*30) : h4h1lo
+
+// h4h1hiPlot = plot(h4h1hi, "Highs", color=(a ? color.red : na))
+// h4h1loPlot = plot(h4h1lo, "Lows", color=(a ? color.red : na))
+// fill(h4h1hiPlot, h4h1loPlot, color.new(#000000,75), fillgaps=true)
+
+// h1high = request.security(syminfo.tickerid, '60', high, lookahead=barmerge.lookahead_on)
+// h1low = request.security(syminfo.tickerid, '60', low, lookahead=barmerge.lookahead_on)
+// var h1dopenhi = 0.0
+// var h1dopenlo = 0.0
+// h1dopenhi := timeframe.period=='60' and hour==18 and dayofweek!=dayofweek.sunday?h1high: hour==15 or hour==16 or hour==17?0:dayofweek==dayofweek.sunday?0: h1dopenhi
+// h1dopenlo := timeframe.period=='60' and hour==18 and dayofweek!=dayofweek.sunday?h1low: hour==15 or hour==16 or hour==17?0:dayofweek==dayofweek.sunday?0: h1dopenlo
+// h1dopenhiPlot = plot(h1dopenhi, "H1Dophi", color=(a ? color.red : na))
+// h1dopenloPlot = plot(h1dopenlo, "H1Doplo", color=(a ? color.red : na))
+// fill(h1dopenhiPlot, h1dopenloPlot, color.new(#5c6f81,45), fillgaps=true)
+
+
+
+// FOREST DAY SESSION 
+var d1hi1 = 0.0
+var d1lo1 = 0.0
+
+
+crypto_ny_hr = 14       // [DEPRECATED — DST fix below makes crypto branch use NY-local time directly, no manual toggle needed]
+crypto_lo_hr = 0        // [DEPRECATED — same; lo_eff_hr now hardcodes NY 19:00 for crypto]
+// crypto_lolunch_hr = 9
+
+forexcfd_ny_hr = 09
+forexcfd_lo_hr = 19
+// forexcfd_lolunch_hr = 5
+
+futures_ny_hr = 08
+futures_lo_hr = 18
+// futures_lolunch_hr = 4
+
+futures_ny_hr2 = 09
+futures_lo_hr2 = 19
+
+
+ny_hr = syminfo.type == "crypto"? crypto_ny_hr : syminfo.type == "futures"? futures_ny_hr : forexcfd_ny_hr
+lo_hr = syminfo.type == "crypto"? crypto_lo_hr : syminfo.type == "futures"? futures_lo_hr : forexcfd_lo_hr
+
+if syminfo.ticker == "MGC1!" or syminfo.ticker == "GC1!" or syminfo.ticker == "CL1!"
+    ny_hr := futures_ny_hr2
+    lo_hr := futures_lo_hr2
+
+// ── DST-aware NY hour/minute helpers ────────────────────────────────
+// Crypto charts on TradingView are in UTC, which does NOT follow DST.
+// A hardcoded `hour == 14` for "NY 9:30" only matches during EST winter;
+// during EDT summer NY 9:30 is 13:30 UTC and the check fires an hour late.
+// Futures/CFD/forex charts display in exchange-local time (Chicago Central
+// or Eastern) which DOES follow DST, so plain `hour` / `minute` is fine.
+// hour(time, "America/New_York") and minute(time, "America/New_York")
+// return NY-local time with automatic EST/EDT handling — use these for
+// crypto and rely on the chart timezone for everything else.
+is_crypto     = syminfo.type == "crypto"
+ny_eff_hour   = is_crypto ? hour(time,   "America/New_York") : hour
+ny_eff_minute = is_crypto ? minute(time, "America/New_York") : minute
+ny_eff_hr     = is_crypto ? 9  : ny_hr    // NY 9:30 day-session anchor
+lo_eff_hr     = is_crypto ? 19 : lo_hr    // NY 19:00 night-session anchor
+
+// NY 9:30 first candle — DST-safe for all symbol types via ny_eff_*
+at_ny_open_first_candle = ny_eff_hour == ny_eff_hr and ny_eff_minute == 30
+
+d1hi1 := (at_ny_open_first_candle? high : d1hi1)
+d1lo1 := (at_ny_open_first_candle? low : d1lo1)
+
+d1hi1Plot = plot(nz(d1hi1[1])==nz(d1hi1[0])? d1hi1:na, "Highs", color=(a ? color.red : na))
+d1lo1Plot = plot(nz(d1lo1[1])==nz(d1lo1[0])? d1lo1:na, "Lows", color=(a ? color.red : na))
+//fill(d1hi1Plot, d1lo1Plot, color.new(#1b5e20,75), fillgaps=false)
+
+//d open + on ltf
+m15high = request.security(syminfo.tickerid, '15', high, lookahead=barmerge.lookahead_on)
+m15low = request.security(syminfo.tickerid, '15', low, lookahead=barmerge.lookahead_on)
+var dopenhi = 0.0
+var dopenlo = 0.0
+dopenhi := ny_eff_hour==lo_eff_hr and ny_eff_minute==45 and timeframe.isintraday==true?m15high:dopenhi
+dopenlo := ny_eff_hour==lo_eff_hr and ny_eff_minute==45 and timeframe.isintraday==true?m15low:dopenlo
+// dopenhiPlot = plot(timeframe.period=='60' and nz(dopenhi[1])==nz(dopenhi[0])?dopenhi:na, "Dophi",style=plot.style_linebr, color=(a ? color.red : na))
+// dopenloPlot = plot(timeframe.period=='60' and nz(dopenlo[1])==nz(dopenlo[0])?dopenlo:na, "Doplo",style=plot.style_linebr, color=(a ? color.red : na))
+// fill(dopenhiPlot, dopenloPlot, color.new(color.black,50), fillgaps=false)
+
+
+
+// SESS H L 
+var prev_sess_bar_hi = 0.0
+var prev_sess_bar_lo = 0.0
+var sess_bar_hi = 0.0
+var sess_bar_lo = 0.0
+var sess_hi = 0.0
+var sess_lo = 99999999.0
+var sess_o = 0.0
+var sess_c = 0.0
+var last_sess_isup = 0
+var last_sess_isdn = 0 
+
+var prev_sessL = 0.0                // 1-break sess-swing (swing)
+var prevprev_sessL = 0.0            // 2-break sess-swing (engulf)
+var prev_sessH = 0.0
+var prevprev_sessH = 0.0
+
+var last_upsessH = 0.0
+var last_upsessL = 0.0
+var last_dnsessH = 0.0
+var last_dnsessL = 0.0
+var last_sessH = 0.0
+var last_sessL = 0.0
+var sess_clr = color.new(color.black,0)
+var checkoncepersess1 = 0
+var checkoncepersess2 = 0
+var checkoncepersess3 = 0
+var checkoncepersess4 = 0
+var checkoncepersess5 = 0
+var checkoncepersess6 = 0
+var sess_swinghi_pivot = 0.0
+var sess_swinglo_pivot = 999999999.0
+
+var is_rb = 0
+
+if timeframe.period=='15' or timeframe.period=='5' or timeframe.period=='1'
+    var tfadjust1 = timeframe.period=='15'? 55 : timeframe.period=='5'? 165 : timeframe.period=='1'? 825 : 0
+    var tfadjust2 = timeframe.period=='15'? 40 : timeframe.period=='5'? 110 : timeframe.period=='1'? 600 : 0
+    //if (nz(d1hi1[1])==nz(d1hi1[0])) or (nz(dopenhi[1])==nz(dopenhi[0])) //
+    if nz(d1hi1[1])!=nz(d1hi1[0])       // NY 
+        prev_sess_bar_hi := sess_bar_hi
+        prev_sess_bar_lo := sess_bar_lo
+        sess_bar_hi := d1hi1
+        sess_bar_lo := d1lo1
+        sess_o := open
+        sess_c := open
+        line.new(bar_index, sess_hi[0], bar_index-tfadjust1, sess_hi[0], xloc.bar_index, extend.none, color=sess_clr, width=3)
+        line.new(bar_index, sess_lo[0], bar_index-tfadjust1, sess_lo[0], xloc.bar_index, extend.none, color=sess_clr, width=3)
+        // sess_hi := 0.0
+        // sess_lo := 999999999.0
+
+    if nz(dopenhi[1])!=nz(dopenhi[0])   // NEW DAY
+        prev_sess_bar_hi := sess_bar_hi
+        prev_sess_bar_lo := sess_bar_lo
+        sess_bar_hi := dopenhi
+        sess_bar_lo := dopenlo
+        sess_o := open
+        sess_c := open
+        line.new(bar_index, sess_hi[0], bar_index-tfadjust2, sess_hi[0], xloc.bar_index, extend.none, color=sess_clr, width=3)
+        line.new(bar_index, sess_lo[0], bar_index-tfadjust2, sess_lo[0], xloc.bar_index, extend.none, color=sess_clr, width=3)
+        // sess_hi := 0.0
+        // sess_lo := 999999999.0
+
+    if nz(d1hi1[1])!=nz(d1hi1[0]) or nz(dopenhi[1])!=nz(dopenhi[0])        
+        checkoncepersess1 := 0
+        checkoncepersess2 := 0
+        checkoncepersess3 := 0
+        checkoncepersess4 := 0
+        if last_sess_isup
+            prevprev_sessL := prev_sessL
+            prev_sessL := last_sessL
+        if last_sess_isdn
+            prevprev_sessH := prev_sessH
+            prev_sessH := last_sessH
+        last_sessH := sess_hi
+        last_sessL := sess_lo
+        sess_hi := high
+        sess_lo := low
+    else
+        sess_hi := high > sess_hi? high : sess_hi
+        sess_lo := low < sess_lo? low : sess_lo
+
+    
+    sess_swinghi_pivot := sess_hi > sess_swinghi_pivot? sess_hi : sess_swinghi_pivot
+    sess_swinglo_pivot := sess_lo < sess_swinglo_pivot? sess_lo : sess_swinglo_pivot
+
+sesshiPlot = plot(nz(sess_bar_hi[1])==nz(sess_bar_hi[0])?sess_bar_hi:na, "sess_bar_hi",style=plot.style_linebr, color=(a ? color.red : na))
+sessloPlot = plot(nz(sess_bar_lo[1])==nz(sess_bar_lo[0])?sess_bar_lo:na, "sess_bar_lo",style=plot.style_linebr, color=(a ? color.red : na))
+fill(sesshiPlot, sessloPlot,color.new(color.black,50), fillgaps=false)
+
+
+
+// CURR SESS LVLS
+
+var curr_sess_n50 = 0.0
+var curr_sess_n25 = 0.0
+var curr_sess_0 = 0.0
+var curr_sess_25 = 0.0
+var curr_sess_33 = 0.0
+var curr_sess_50 = 0.0
+var curr_sess_66 = 0.0
+var curr_sess_75 = 0.0
+var curr_sess_100 = 0.0
+var curr_sess_125 = 0.0
+var curr_sess_150 = 0.0
+
+curr_sess_150 := sess_hi + (sess_hi - sess_lo)/2
+curr_sess_125 := sess_hi + (sess_hi - sess_lo)/4
+curr_sess_100 := sess_hi
+curr_sess_75 := sess_hi - (sess_hi - sess_lo)/4
+curr_sess_66 := sess_hi - (sess_hi - sess_lo)/3
+curr_sess_50 := sess_hi - (sess_hi - sess_lo)/2
+curr_sess_33 := sess_lo + (sess_hi - sess_lo)/3
+curr_sess_25 := sess_lo + (sess_hi - sess_lo)/4
+curr_sess_0 := sess_lo
+curr_sess_n25 := sess_lo - (sess_hi - sess_lo)/4
+curr_sess_n50 := sess_lo - (sess_hi - sess_lo)/2
+
+clr_3range = color.new(#153815,0)
+clr_3rangefill = color.new(#338833,70)
+
+clr_4range = color.new(#153815,0)
+clr_4rangefill = color.new(#153815, 70)
+
+baridx1 = 12
+baridx2 = 18
+if timeframe.period=='15' or timeframe.period=='5'
+    c150 = line.new(bar_index+baridx1, curr_sess_150, bar_index+baridx2, curr_sess_150, xloc.bar_index, extend.none, clr_4range,line.style_solid,1)
+    c125 = line.new(bar_index+baridx1, curr_sess_125, bar_index+baridx2, curr_sess_125, xloc.bar_index, extend.none, clr_4range,line.style_solid,1)
+    c100 = line.new(bar_index+baridx1, curr_sess_100, bar_index+baridx2, curr_sess_100, xloc.bar_index, extend.none, color.new(#000000,0),line.style_solid,1)
+    c75 = line.new(bar_index+baridx1, curr_sess_75, bar_index+baridx2, curr_sess_75, xloc.bar_index, extend.none, color.new(color.green,100),line.style_solid,1)
+    c66 = line.new(bar_index+baridx1, curr_sess_66, bar_index+baridx2, curr_sess_66, xloc.bar_index, extend.none, color.new(color.green,100),line.style_solid,1)
+    c50 = line.new(bar_index+baridx1, curr_sess_50, bar_index+baridx2, curr_sess_50, xloc.bar_index, extend.none, color.new(#000000,0),line.style_solid,1)
+    c33 = line.new(bar_index+baridx1, curr_sess_33, bar_index+baridx2, curr_sess_33, xloc.bar_index, extend.none, color.new(color.green,100),line.style_solid,1)
+    c25 = line.new(bar_index+baridx1, curr_sess_25, bar_index+baridx2, curr_sess_25, xloc.bar_index, extend.none, color.new(color.green,100),line.style_solid,1)
+    c0 = line.new(bar_index+baridx1, curr_sess_0, bar_index+baridx2, curr_sess_0, xloc.bar_index, extend.none, color.new(#000000,0),line.style_solid,1)
+    cn25 = line.new(bar_index+baridx1, curr_sess_n25, bar_index+baridx2, curr_sess_n25, xloc.bar_index, extend.none, clr_4range,line.style_solid,1)
+    cn50 = line.new(bar_index+baridx1, curr_sess_n50, bar_index+baridx2, curr_sess_n50, xloc.bar_index, extend.none, clr_4range,line.style_solid,1)
+
+    linefill.new(c125,c100,clr_4rangefill)
+    linefill.new(c100,c75,clr_3rangefill)
+    linefill.new(c75,c66,color.new(color.olive,70))
+    linefill.new(c25,c33,color.new(color.olive,70))
+    linefill.new(c25,c0,clr_3rangefill)
+    linefill.new(c0,cn25,clr_4rangefill)
+
+    line.delete(c150[1])
+    line.delete(c125[1])
+    line.delete(c100[1])
+    line.delete(c75[1])
+    line.delete(c66[1])
+    line.delete(c50[1])
+    line.delete(c33[1])
+    line.delete(c25[1])
+    line.delete(c0[1])
+    line.delete(cn25[1])
+    line.delete(cn50[1])
+
+// PREV SESS -25, 0, 25, 50, 75, 100, 125
+
+var prev_sess_150 = 0.0
+var prev_sess_n50 = 0.0
+var prev_sess_n25 = 0.0
+var prev_sess_0 = 0.0
+var prev_sess_25 = 0.0
+var prev_sess_33 = 0.0
+var prev_sess_50 = 0.0
+var prev_sess_66 = 0.0
+var prev_sess_75 = 0.0
+var prev_sess_100 = 0.0
+var prev_sess_125 = 0.0
+
+newsess = (timeframe.period=='15' or timeframe.period=='5' or timeframe.period=='1') and (nz(d1hi1[1])!=nz(d1hi1[0]) or nz(dopenhi[1])!=nz(dopenhi[0]))
+newsess2 = (timeframe.period=='15' or timeframe.period=='5' or timeframe.period=='1') and (nz(d1hi1[2])!=nz(d1hi1[0]) or nz(dopenhi[2])!=nz(dopenhi[0]))
+newsess3 = (timeframe.period=='15' or timeframe.period=='5' or timeframe.period=='1') and (nz(d1hi1[3])!=nz(d1hi1[0]) or nz(dopenhi[3])!=nz(dopenhi[0]))
+newsess4 = (timeframe.period=='15' or timeframe.period=='5' or timeframe.period=='1') and (nz(d1hi1[4])!=nz(d1hi1[0]) or nz(dopenhi[4])!=nz(dopenhi[0]))
+newsess5 = (timeframe.period=='15' or timeframe.period=='5' or timeframe.period=='1') and (nz(d1hi1[5])!=nz(d1hi1[0]) or nz(dopenhi[5])!=nz(dopenhi[0]))
+newsess6 = (timeframe.period=='15' or timeframe.period=='5' or timeframe.period=='1') and (nz(d1hi1[6])!=nz(d1hi1[0]) or nz(dopenhi[6])!=nz(dopenhi[0]))
+newsess7 = (timeframe.period=='15' or timeframe.period=='5' or timeframe.period=='1') and (nz(d1hi1[7])!=nz(d1hi1[0]) or nz(dopenhi[7])!=nz(dopenhi[0]))
+newsess8 = (timeframe.period=='15' or timeframe.period=='5' or timeframe.period=='1') and (nz(d1hi1[8])!=nz(d1hi1[0]) or nz(dopenhi[8])!=nz(dopenhi[0]))
+newsess9 = (timeframe.period=='15' or timeframe.period=='5' or timeframe.period=='1') and (nz(d1hi1[9])!=nz(d1hi1[0]) or nz(dopenhi[9])!=nz(dopenhi[0]))
+newsess10 = (timeframe.period=='15' or timeframe.period=='5' or timeframe.period=='1') and (nz(d1hi1[10])!=nz(d1hi1[0]) or nz(dopenhi[10])!=nz(dopenhi[0]))
+
+prev_sess_150 := last_sessH + (last_sessH - last_sessL)/2
+prev_sess_125 := last_sessH + (last_sessH - last_sessL)/4
+prev_sess_100 := last_sessH
+prev_sess_75 := last_sessH - (last_sessH - last_sessL)/4
+prev_sess_66 := last_sessH - (last_sessH - last_sessL)/3
+prev_sess_50 := last_sessH - (last_sessH - last_sessL)/2
+prev_sess_33 := last_sessL + (last_sessH - last_sessL)/3
+prev_sess_25 := last_sessL + (last_sessH - last_sessL)/4
+prev_sess_0 := last_sessL
+prev_sess_n25 := last_sessL - (last_sessH - last_sessL)/4
+prev_sess_n50 := last_sessL - (last_sessH - last_sessL)/2
+
+// if (timeframe.period=='15' or timeframe.period=='5') and newsess
+    // sessl_150 = line.new(bar_index-10, prev_sess_150, bar_index, prev_sess_150, xloc.bar_index, extend.none, clr_4range,line.style_solid,1)    
+    // sessl_125 = line.new(bar_index-10, prev_sess_125, bar_index, prev_sess_125, xloc.bar_index, extend.none, clr_4range,line.style_solid,1)
+    
+    // sessl_n25 = line.new(bar_index-10, prev_sess_n25, bar_index, prev_sess_n25, xloc.bar_index, extend.none, clr_4range,line.style_solid,1)
+    // sessl_n50 = line.new(bar_index-10, prev_sess_n50, bar_index, prev_sess_n50, xloc.bar_index, extend.none, clr_4range,line.style_solid,1)
+    // line.delete(sessl_150[1])
+    // line.delete(sessl_125[1])
+    // line.delete(sessl_n25[1])
+    // line.delete(sessl_n50[1])
+
+plot_150 = plot(newsess or newsess2 or newsess3 or newsess4 or newsess5 or (timeframe.period=='5' and (newsess5 or newsess6 or newsess7 or newsess8 or newsess9))? prev_sess_150[0]: na, "sess_150", clr_4range,1,plot.style_linebr,offset=-4)
+plot_125 = plot(newsess or newsess2 or newsess3 or newsess4 or newsess5 or (timeframe.period=='5' and (newsess5 or newsess6 or newsess7 or newsess8 or newsess9))? prev_sess_125[0]: na, "sess_125", clr_4range,1,plot.style_linebr,offset=-4)
+plot_100 = plot(newsess or newsess2 or newsess3 or newsess4 or newsess5 or (timeframe.period=='5' and (newsess5 or newsess6 or newsess7 or newsess8 or newsess9))? prev_sess_100[0]: na, "sess_100", color.new(#000000,0),2,plot.style_linebr,offset=-4)
+plot_75 = plot(newsess or newsess2 or newsess3 or newsess4 or newsess5 or (timeframe.period=='5' and (newsess5 or newsess6 or newsess7 or newsess8 or newsess9))? prev_sess_75[0]: na, "sess_75", color.new(color.green,100),1,plot.style_linebr,offset=-4)
+plot_66 = plot(newsess or newsess2 or newsess3 or newsess4 or newsess5 or (timeframe.period=='5' and (newsess5 or newsess6 or newsess7 or newsess8 or newsess9))? prev_sess_66[0]: na, "sess_66", color.new(color.green,100),1,plot.style_linebr,offset=-4)
+//plot_50 = plot(newsess or newsess2 or newsess3 or newsess4 or newsess5 or (timeframe.period=='5' and (newsess5 or newsess6 or newsess7 or newsess8 or newsess9))? prev_sess_50[0]: na, "sess_50", color.new(#000000, 0),1,plot.style_linebr,offset=-4)
+plot_33 = plot(newsess or newsess2 or newsess3 or newsess4 or newsess5 or (timeframe.period=='5' and (newsess5 or newsess6 or newsess7 or newsess8 or newsess9))? prev_sess_33[0]: na, "sess_33", color.new(color.green,100),1,plot.style_linebr,offset=-4)
+plot_25 = plot(newsess or newsess2 or newsess3 or newsess4 or newsess5 or (timeframe.period=='5' and (newsess5 or newsess6 or newsess7 or newsess8 or newsess9))? prev_sess_25[0]: na, "sess_25", color.new(color.green,100),1,plot.style_linebr,offset=-4)
+plot_0 = plot(newsess or newsess2 or newsess3 or newsess4 or newsess5 or (timeframe.period=='5' and (newsess5 or newsess6 or newsess7 or newsess8 or newsess9))? prev_sess_0[0]: na, "sess_0", color.new(#000000,0),2,plot.style_linebr,offset=-4)
+plot_n25 = plot(newsess or newsess2 or newsess3 or newsess4 or newsess5 or (timeframe.period=='5' and (newsess5 or newsess6 or newsess7 or newsess8 or newsess9))? prev_sess_n25[0]: na, "sess_n25", clr_4range,1,plot.style_linebr,offset=-4)
+plot_n50 = plot(newsess or newsess2 or newsess3 or newsess4 or newsess5 or (timeframe.period=='5' and (newsess5 or newsess6 or newsess7 or newsess8 or newsess9))? prev_sess_n50[0]: na, "sess_n50", clr_4range,1,plot.style_linebr,offset=-4)
+
+
+fill(plot_125, plot_100,clr_4rangefill, fillgaps=false)
+fill(plot_100, plot_75,clr_3rangefill, fillgaps=false)
+fill(plot_75, plot_66,color.new(color.olive,70), fillgaps=false)
+fill(plot_25, plot_33,color.new(color.olive,70), fillgaps=false)
+fill(plot_25, plot_0,clr_3rangefill, fillgaps=false)
+fill(plot_0, plot_n25,clr_4rangefill, fillgaps=false)
+
+// curr sess, prev sess, prev day retracement levels
+var curr_sess_lvl_long = 0.0
+var prev_sess_lvl_long = 0.0
+var prev_day_lvl_long = 0.0
+
+var curr_sess_lvl_short = 0.0
+var prev_sess_lvl_short = 0.0
+var prev_day_lvl_short = 0.0
+
+D1hi = request.security(syminfo.tickerid, 'D', high[1], lookahead=barmerge.lookahead_on)
+D1lo = request.security(syminfo.tickerid, 'D', low[1], lookahead=barmerge.lookahead_on)
+
+curr_sess_lvl_long := (close - sess_lo) / (sess_hi - sess_lo)
+prev_sess_lvl_long := (close - prev_sess_0) / (prev_sess_100 - prev_sess_0)
+prev_day_lvl_long := (close - D1lo) / (D1hi - D1lo)
+
+curr_sess_lvl_short := (close - sess_hi) / (sess_lo - sess_hi)
+prev_sess_lvl_short := (close - prev_sess_100) / (prev_sess_0 - prev_sess_100)
+prev_day_lvl_short := (close - D1hi) / (D1lo - D1hi)
+
+// plot(D1hi,style=plot.style_circles)
+// plot(D1lo,style=plot.style_circles)
+
+// if timeframe.period=='15' //and nz(D1High[1])!=nz(D1High[0])
+//     tbl_retrace_short = table.new(position.top_right,3,7,border_width=1,border_color=color.black,frame_width=2,frame_color=color.black)
+//     table.cell(tbl_retrace_short, 1, 1, syminfo.ticker=='DXY'? str.tostring(truncate(curr_sess_lvl_long,2)) : str.tostring(truncate(curr_sess_lvl_short,2)))
+//     table.cell(tbl_retrace_short, 1, 2, syminfo.ticker=='DXY'? str.tostring(truncate(prev_sess_lvl_long,2)) : str.tostring(truncate(prev_sess_lvl_short,2)))
+//     table.cell(tbl_retrace_short, 1, 3, syminfo.ticker=='DXY'? str.tostring(truncate(prev_day_lvl_long,2)) : str.tostring(truncate(prev_day_lvl_short,2)))
+
+//     table.cell(tbl_retrace_short, 0, 0, "SELL HIGH", text_halign=text.align_center)
+//     table.cell(tbl_retrace_short, 0, 1, "curr_s")
+//     table.cell(tbl_retrace_short, 0, 2, "prev_s")
+//     table.cell(tbl_retrace_short, 0, 3, "prev_d")
+//     table.merge_cells(tbl_retrace_short,0,0,1,0)
+
+// if timeframe.period=='15' //and nz(D1High[1])!=nz(D1High[0])
+//     tbl_retrace_long = table.new(position.bottom_right,3,7,border_width=1,border_color=color.black,frame_width=2,frame_color=color.black)
+//     table.cell(tbl_retrace_long, 1, 0, syminfo.ticker=='DXY'? str.tostring(truncate(curr_sess_lvl_short,2)) : str.tostring(truncate(curr_sess_lvl_long,2)))
+//     table.cell(tbl_retrace_long, 1, 1, syminfo.ticker=='DXY'? str.tostring(truncate(prev_sess_lvl_short,2)) : str.tostring(truncate(prev_sess_lvl_long,2)))
+//     table.cell(tbl_retrace_long, 1, 2, syminfo.ticker=='DXY'? str.tostring(truncate(prev_day_lvl_short,2)) : str.tostring(truncate(prev_day_lvl_long,2)))
+
+//     table.cell(tbl_retrace_long, 0, 0, "curr_s")
+//     table.cell(tbl_retrace_long, 0, 1, "prev_s")
+//     table.cell(tbl_retrace_long, 0, 2, "prev_d")
+//     table.cell(tbl_retrace_long, 0, 3, "BUY LOW", text_halign=text.align_center)
+//     table.merge_cells(tbl_retrace_long,0,3,1,3)
+
+// newday = nz(dopenhi[1])!=nz(dopenhi[0])
+// newny = nz(d1hi1[1])!=nz(d1hi1[0]) 
+// plotcandle(newday? sess_o[1]:na, newday? last_sessH:na, newday? last_sessL:na, newday? sess_c:na,title="sess_candle",color=sess_o[1]<sess_c?color.new(color.green,50):color.new(color.black,50),wickcolor=color.new(color.black,50),bordercolor=color.new(color.red,100))
+// plotcandle(newny? sess_o[1]:na, newny? last_sessH:na, newny? last_sessL:na, newny? sess_c:na,title="sess_candle",color=sess_o[1]<sess_c?color.new(color.green,50):color.new(color.black,50),wickcolor=color.new(color.black,50),bordercolor=color.new(color.red,100))
+
+var upsess_engulfcheckH = 0.0       // upsess means engulfing upward (similar to last_dn_pattern, dn OB before up)
+var upsess_engulfcheckL = 0.0       // holding last possible engulf values
+var dnsess_engulfcheckH = 0.0       // dnsess means engulfing dnward (similar to last_up_pattern, up OB before dn)
+var dnsess_engulfcheckL = 0.0
+
+var upsess_engulfedH = 0.0          // actual engulfed sessions
+var upsess_engulfedL = 0.0
+var dnsess_engulfedH = 0.0
+var dnsess_engulfedL = 0.0
+
+
+
+var prevprev_clr = color.new(#000000, 0)
+                                    // holding values for engulfed check
+var ln_pph = line.new(bar_index,0,bar_index,0)
+var ln_ph = line.new(bar_index,0,bar_index,0)
+if low < last_sessL and checkoncepersess1==0
+    last_sess_isdn := 1
+    last_sess_isup := 0
+    checkoncepersess5 := 0
+    checkoncepersess1 := 1
+    upsess_engulfcheckH := last_sessH
+    upsess_engulfcheckL := last_sessL
+    prevprev_sessH := prev_sessH
+    prev_sessH := sess_hi > last_sessH? sess_hi : last_sessH
+    // i = 0
+    // founda=0
+    // foundb=0
+    // while i < 400
+    //     if founda==1 and foundb==1
+    //         break
+    //     if prev_sessH == sess_hi[i] and founda==0
+    //         founda:=1
+    //         ln_ph := line.new(bar_index-i-36, prev_sessH, bar_index-i, prev_sessH, xloc.bar_index, extend.right, prevprev_clr, line.style_solid, 1)
+    //         line.delete(ln_ph[1])
+    //     else if prevprev_sessH == sess_hi[i] and foundb==0
+    //         foundb:=1
+    //         ln_pph := line.new(bar_index-i-36, prevprev_sessH, bar_index-i, prevprev_sessH, xloc.bar_index, extend.right, prevprev_clr, line.style_solid, 1)
+    //         line.delete(ln_pph[1])
+    //     i += 1
+
+var ln_ppl = line.new(bar_index,0,bar_index,0)
+var ln_pl = line.new(bar_index,0,bar_index,0)
+if high > last_sessH and checkoncepersess2==0
+    last_sess_isup := 1
+    last_sess_isdn := 0
+    checkoncepersess2 := 1
+    checkoncepersess6 := 0
+    dnsess_engulfcheckH := last_sessH
+    dnsess_engulfcheckL := last_sessL
+    prevprev_sessL := prev_sessL
+    prev_sessL := sess_lo < last_sessL? sess_lo : last_sessL
+    // i = 0
+    // founda=0
+    // foundb=0
+    // while i < 400
+    //     if founda==1 and foundb==1
+    //         break
+    //     if prev_sessL == sess_lo[i] and founda==0
+    //         founda:=1
+    //         ln_pl := line.new(bar_index-i-36, prev_sessL, bar_index-i, prev_sessL, xloc.bar_index, extend.right, prevprev_clr, line.style_solid, 1)
+    //         line.delete(ln_pl[1])
+    //     else if prevprev_sessL == sess_lo[i] and foundb==0
+    //         foundb:=1
+    //         ln_ppl := line.new(bar_index-i-36, prevprev_sessL, bar_index-i, prevprev_sessL, xloc.bar_index, extend.right, prevprev_clr, line.style_solid, 1)
+    //         line.delete(ln_ppl[1])
+    //     i += 1
+
+                                    // actually engulfed sessions
+// plot(prevprev_sessH,color=color.blue)
+// plot(prev_sessH,color=color.black)
+// plot(prevprev_sessL,color=color.blue)
+// plot(prev_sessL,color=color.black)
+var ln_upgh = line.new(bar_index,0,bar_index,0)
+var ln_upgl = line.new(bar_index,0,bar_index,0)
+if high > upsess_engulfcheckH and checkoncepersess3==0
+    checkoncepersess3 := 1
+    upsess_engulfedH := upsess_engulfcheckH
+    upsess_engulfedL := upsess_engulfcheckL
+    i = 0
+    while i < 400
+        if upsess_engulfedH == sess_hi[i] and upsess_engulfedL == sess_lo[i]
+            // ln_upgh := line.new(bar_index-i-36, upsess_engulfedH, bar_index-i, upsess_engulfedH, xloc.bar_index, extend.none, color.olive, line.style_solid, 4)
+            // ln_upgl := line.new(bar_index-i-36, upsess_engulfedL, bar_index-i, upsess_engulfedL, xloc.bar_index, extend.none, color.olive, line.style_solid, 4)
+            // line.delete(ln_upgh[3])
+            // line.delete(ln_upgl[3])
+            break
+        i += 1                     
+
+var ln_dngh = line.new(bar_index,0,bar_index,0)
+var ln_dngl = line.new(bar_index,0,bar_index,0)              
+if low < dnsess_engulfcheckL and checkoncepersess4==0
+    checkoncepersess4 := 1
+    dnsess_engulfedH := dnsess_engulfcheckH
+    dnsess_engulfedL := dnsess_engulfcheckL
+    i = 0
+    while i < 400
+        if dnsess_engulfedH == sess_hi[i] and dnsess_engulfedL == sess_lo[i]
+            // ln_dngh := line.new(bar_index-i-36, dnsess_engulfedH, bar_index-i, dnsess_engulfedH, xloc.bar_index, extend.none, color.olive, line.style_solid, 4)
+            // ln_dngl := line.new(bar_index-i-36, dnsess_engulfedL, bar_index-i, dnsess_engulfedL, xloc.bar_index, extend.none, color.olive, line.style_solid, 4)
+            // line.delete(ln_dngh[3])
+            // line.delete(ln_dngl[3])
+            break
+        i += 1
+
+// LINE NEW FOR SWING EXTREMES 
+var ln_sess_swinglo = line.new(bar_index,0,bar_index,0)
+if high > prev_sessH and checkoncepersess5==0
+    //prev_sessH := sess_hi
+    checkoncepersess5 := 1
+    sess_swinghi_pivot := high
+    line.delete(ln_ph)
+    i = 0
+    while i < 400
+        if sess_swinglo_pivot == sess_lo[i]
+            // ln_sess_swinglo := line.new(bar_index-i-36, sess_swinglo_pivot, bar_index-i, sess_swinglo_pivot, xloc.bar_index, extend.none, color.olive, line.style_solid, 4)
+            //line.delete(ln_sess_swinglo[3])
+            break
+        i += 1
+if high > prevprev_sessH
+    line.delete(ln_pph)
+
+var ln_sess_swinghi = line.new(bar_index,0,bar_index,0)
+if low < prev_sessL and checkoncepersess6==0
+    //prev_sessL := sess_lo
+    checkoncepersess6 := 1
+    sess_swinglo_pivot := low
+    line.delete(ln_pl)
+    i = 0
+    while i < 400
+        if sess_swinghi_pivot == sess_hi[i]
+            // ln_sess_swinghi := line.new(bar_index-i-36, sess_swinghi_pivot, bar_index-i, sess_swinghi_pivot, xloc.bar_index, extend.none, color.olive, line.style_solid, 4)
+            //line.delete(ln_sess_swinghi[3])
+            break
+        i += 1
+if low < prevprev_sessL
+    line.delete(ln_ppl)
+
+// plot(sess_swinghi_pivot)
+// plot(sess_swinglo_pivot)
+
+// plot(nz(upsess_engulfedH[1])!=nz(upsess_engulfedH[0])? upsess_engulfedH:na, style=plot.style_linebr, linewidth=3)
+// plot(nz(upsess_engulfedL[1])!=nz(upsess_engulfedL[0])? upsess_engulfedL:na, style=plot.style_linebr, linewidth=3)
+// plot(nz(upsess_engulfedH[1])==nz(upsess_engulfedH[0])? upsess_engulfedH:na, style=plot.style_linebr, linewidth=3)
+// plot(nz(upsess_engulfedL[1])==nz(upsess_engulfedL[0])? upsess_engulfedL:na, style=plot.style_linebr, linewidth=3)
+
+// plot(nz(dnsess_engulfedH[1])!=nz(dnsess_engulfedH[0])? dnsess_engulfedH:na, color=color.aqua, style=plot.style_linebr, linewidth=3)
+// plot(nz(dnsess_engulfedL[1])!=nz(dnsess_engulfedL[0])? dnsess_engulfedL:na, color=color.aqua, style=plot.style_linebr, linewidth=3)
+// plot(nz(dnsess_engulfedH[1])==nz(dnsess_engulfedH[0])? dnsess_engulfedH:na, color=color.aqua, style=plot.style_linebr, linewidth=3)
+// plot(nz(dnsess_engulfedL[1])==nz(dnsess_engulfedL[0])? dnsess_engulfedL:na, color=color.aqua, style=plot.style_linebr, linewidth=3)
+
+
+// plot(sess_bar_hi, linewidth=3)
+// plot(sess_bar_lo, linewidth=3)
+// plot(sess_hi, linewidth=3)
+// plot(sess_lo, linewidth=3)
+//w open + on ltf
+// w1high = request.security(syminfo.tickerid, '240', high, lookahead=barmerge.lookahead_on)
+// w1low = request.security(syminfo.tickerid, '240', low, lookahead=barmerge.lookahead_on)
+// var wophi1 = 0.0
+// var woplo1 = 0.0
+// wophi1 := ((timeframe.period=='240' or timeframe.period=='60') and dayofweek==dayofweek.sunday and (hour==17)? w1high : wophi1)
+// woplo1 := ((timeframe.period=='240' or timeframe.period=='60') and dayofweek==dayofweek.sunday and (hour==17)? w1low : woplo1) //and timeframe.period == '240' and barstate.isconfirmed and minute == 00 and 
+// wophi1Plot = plot(wophi1, "Wop Highs", color=(a ? color.red : na))
+// woplo1Plot = plot(woplo1, "Wop Lows", color=(a ? color.red : na))
+// fill(wophi1Plot, woplo1Plot, color.new(#1b5e20,80), fillgaps=true)
+
+
+//1st H4 candle
+// h4high = request.security(syminfo.tickerid, '240', high, lookahead=barmerge.lookahead_on)
+// h4low = request.security(syminfo.tickerid, '240', low, lookahead=barmerge.lookahead_on)
+// var h4dopenhi = 0.0
+// var h4dopenlo = 0.0
+// h4dopenhi := hour==17 and minute==0 and timeframe.isintraday==true?h4high: hour==15?0: h4dopenhi
+// h4dopenlo := hour==17 and minute==0 and timeframe.isintraday==true?h4low: hour==15?0: h4dopenlo
+// h4dopenhiPlot = plot(h4dopenhi, "H4Dophi", color=(a ? color.red : na))
+// h4dopenloPlot = plot(h4dopenlo, "H4Doplo", color=(a ? color.red : na))
+// fill(h4dopenhiPlot, h4dopenloPlot,color.new(color.black,85), fillgaps=true)
+
+
+// DAY OPENING PRICE PLOT - REAL ONE FOR BOTH 60 AND 15 -- FOR 60 ONLY
+// 5c9769
+[h1ltf_hi, h1ltf_lo] = request.security_lower_tf(syminfo.tickerid, timeframe.period=='60'?'15':na, [high, low])
+var niteo_hi = 0.0
+var niteo_lo = 0.0
+var dayo_hi = 0.0
+var dayo_lo = 0.0
+
+var pniteo_hi = 0.0
+var pniteo_lo = 0.0
+var pdayo_hi = 0.0
+var pdayo_lo = 0.0
+
+var pniteo_hi_check = 0
+var pniteo_lo_check = 0
+var pniteo_touched = false
+var pdayo_hi_check = 0
+var pdayo_lo_check = 0
+var pdayo_touched = false
+
+offset1day = -1380 / timeframe.multiplier
+
+getArrayValue(float[] array, int idx) =>
+    if idx >= 0 and array.size(array) > idx
+        array.get(array, idx)
+    else
+        na
+
+if timeframe.period=='60' and ny_eff_hour == ny_eff_hr     // DAY SESS FIRST BAR (DST-safe)
+    // if not pdayo_touched
+    //     pdayo1_hi_line = line.new(bar_index-23, pniteo_hi, bar_index-14, pniteo_hi, xloc.bar_index, extend.none, color.new(color.black,100),line.style_solid,1)
+    //     pdayo1_lo_line = line.new(bar_index-23, pniteo_lo, bar_index-14, pniteo_lo, xloc.bar_index, extend.none, color.new(color.black,100),line.style_solid,1)
+    //     linefill.new(pdayo1_hi_line,pdayo1_lo_line,color.new(color.maroon,50))
+    //     line.delete(pdayo1_hi_line[1])
+    //     line.delete(pdayo1_lo_line[1])    
+    pniteo_hi_check := 0
+    pniteo_lo_check := 0    
+    pniteo_hi := niteo_hi
+    pniteo_lo := niteo_lo
+    niteo_hi := 0
+    niteo_lo := 0
+    dayo_hi := getArrayValue(h1ltf_hi,2)
+    dayo_lo := getArrayValue(h1ltf_lo,2)
+    pniteo_hi_check := dayo_lo < pniteo_hi or getArrayValue(h1ltf_lo,3) < pniteo_hi? 1 : 0
+    pniteo_lo_check := dayo_hi > pniteo_lo or getArrayValue(h1ltf_hi,3) > pniteo_lo? 1 : 0
+if timeframe.period=='60' and ny_eff_hour == lo_eff_hr     // NITE SESS FIRST BAR (DST-safe)
+    // if not pniteo_touched
+    //     pniteo1_hi_line = line.new(bar_index-23, pniteo_hi, bar_index-9, pniteo_hi, xloc.bar_index, extend.none, color.new(color.black,100),line.style_solid,1)
+    //     pniteo1_lo_line = line.new(bar_index-23, pniteo_lo, bar_index-9, pniteo_lo, xloc.bar_index, extend.none, color.new(color.black,100),line.style_solid,1)
+    //     linefill.new(pniteo1_hi_line,pniteo1_lo_line,color.new(color.maroon,50))
+    //     line.delete(pniteo1_hi_line[1])
+    //     line.delete(pniteo1_lo_line[1])    
+    pdayo_hi_check := 0
+    pdayo_lo_check := 0
+    pdayo_hi := dayo_hi
+    pdayo_lo := dayo_lo
+    dayo_hi := 0
+    dayo_lo := 0
+    niteo_hi := getArrayValue(h1ltf_hi,array.size(h1ltf_hi)-1)
+    niteo_lo := getArrayValue(h1ltf_lo,array.size(h1ltf_lo)-1)
+
+if hour!=ny_hr and niteo_hi==0 // DAY SESS ACTIVE
+    pniteo_hi_check := low <= pniteo_hi? 1 : pniteo_hi_check
+    pniteo_lo_check := high >= pniteo_lo? 1 : pniteo_lo_check
+if dayo_hi==0 // NITE SESS ACTIVE
+    if low <= pdayo_hi
+        pdayo_hi_check :=1
+    if high >= pdayo_lo
+        pdayo_lo_check :=1
+
+pniteo_touched := pniteo_hi_check==1 and pniteo_lo_check==1
+pdayo_touched := pdayo_hi_check==1 and pdayo_lo_check==1
+
+// var daysess_hi = 0.0
+// var daysess_lo = 999999999.0
+// if niteo_hi==1      // DAY SESS H L
+//     if high > daysess_hi
+//         daysess_hi := high
+//     if low < daysess_lo
+//         daysess_lo := low
+
+// var nitesess_hi = 0.0
+// var nitesess_lo = 999999999.0
+// if dayo_hi==1       // NITE SESS H L
+//     if high > nitesess_hi
+//         nitesess_hi := high
+//     if low < nitesess_lo
+//         nitesess_lo := low
+
+/// CURR NITE
+ltfo_hiplot = plot(nz(niteo_hi[1])==nz(niteo_hi[0])?niteo_hi:na, "ltfo_hi",style=plot.style_linebr, color=(a ? color.red : na))
+ltfo_loplot = plot(nz(niteo_lo[1])==nz(niteo_lo[0])?niteo_lo:na, "ltfo_lo",style=plot.style_linebr, color=(a ? color.red : na))
+// CURR DAY
+ltfdo_hiplot = plot(nz(dayo_hi[1])==nz(dayo_hi[0])?dayo_hi:na, "ltfo_hi",style=plot.style_linebr, color=(a ? color.red : na))
+ltfdo_loplot = plot(nz(dayo_lo[1])==nz(dayo_lo[0])?dayo_lo:na, "ltfo_lo",style=plot.style_linebr, color=(a ? color.red : na))
+
+/// PREV NITE
+ltfpo_hiplot = plot(nz(pniteo_hi[1])==nz(pniteo_hi[0]) and niteo_hi!=0 and not pniteo_touched==true?pniteo_hi:na, "ltfpo_hi",style=plot.style_linebr, color=(a ? color.red : na), offset=offset1day) //  and niteo_hi!=0
+ltfpo_loplot = plot(nz(pniteo_lo[1])==nz(pniteo_lo[0]) and niteo_hi!=0 and not pniteo_touched==true?pniteo_lo:na, "ltfpo_lo",style=plot.style_linebr, color=(a ? color.red : na), offset=offset1day) //  and niteo_hi!=0
+// PREV DAY
+ltfpdo_hiplot = plot(nz(pdayo_hi[1])==nz(pdayo_hi[0]) and dayo_hi!=0 and not pdayo_touched==true?pdayo_hi:na, "ltfpdo_hi",style=plot.style_linebr, color=(a ? color.red : na), offset=offset1day) // and dayo_hi!=0
+ltfpdo_loplot = plot(nz(pdayo_lo[1])==nz(pdayo_lo[0]) and dayo_hi!=0 and not pdayo_touched==true?pdayo_lo:na, "ltfpdo_lo",style=plot.style_linebr, color=(a ? color.red : na), offset=offset1day) // and dayo_hi!=0
+// ltfo_hiplot1 = plot(nz(niteo_hi[1])!=nz(niteo_hi[0])?niteo_hi:na, "ltfo_hi1",style=plot.style_linebr, color=(a ? color.red : na))
+// ltfo_loplot1 = plot(nz(niteo_lo[1])!=nz(niteo_lo[0])?niteo_lo:na, "ltfo_lo1",style=plot.style_linebr, color=(a ? color.red : na))
+
+// fill(ltfo_hiplot1, ltfo_loplot1,color.new(color.black,50), fillgaps=false)
+var sessibh = line.new(0,0,0,0)
+var sessibl = line.new(0,0,0,0)
+var sessfill = linefill.new(sessibh,sessibl,color.black)
+
+// D1o1 = request.security(syminfo.tickerid,'D',open)
+// gapsess_oline = plot(nz(pniteo_hi[1])==nz(pniteo_hi[0]) and niteo_hi!=0 and not pniteo_touched==true and barstate.isconfirmed?D1o1:na, "gapsess_oline",style=plot.style_linebr, color=color.new(color.maroon, 20), offset=offset1day, linewidth=6) //  and niteo_hi!=0
+
+// plot(timeframe.period=='60' and pniteo_touched==false? D1o1 : na, style=plot.style_linebr, color=color.new(#4e50da, 50), title="D1 Open", offset=-1440/timeframe.multiplier, linewidth=8)
+// plot(timeframe.period=='60' and nz(pniteo_hi[2])!=nz(pniteo_hi[0]) and niteo_hi!=0 and not pniteo_touched==true ? D1o1 : na, style=plot.style_linebr, color=color.new(#4e50da, 50), title="D1 Open", offset=-1440/timeframe.multiplier, linewidth=8)
+// if nz(pniteo_hi[2])!=nz(pniteo_hi[0]) and niteo_hi!=0 and not pniteo_touched==true
+//     sessibh := line.new(bar_index - offset1day, pniteo_hi, bar_index, pniteo_hi, xloc.bar_index, extend.none, color.new(color.maroon,100),line.style_solid,1)
+//     sessibl := line.new(bar_index - offset1day, pniteo_lo, bar_index, pniteo_lo, xloc.bar_index, extend.none, color.new(color.maroon,100),line.style_solid,1)
+//     sessfill := linefill.new(sessibh,sessibl,color.new(color.maroon,50))
+//     line.delete(sessibh[1])
+//     line.delete(sessibl[1])
+//     linefill.delete(sessfill[1])    
+
+// else if nz(pdayo_hi[2])!=nz(pdayo_hi[0]) and dayo_hi!=0 and not pdayo_touched==true
+//     sessibh := line.new(bar_index - offset1day, pdayo_hi, bar_index, pdayo_hi, xloc.bar_index, extend.none, color.new(color.maroon,100),line.style_solid,1)
+//     sessibl := line.new(bar_index - offset1day, pdayo_lo, bar_index, pdayo_lo, xloc.bar_index, extend.none, color.new(color.maroon,100),line.style_solid,1)    
+//     sessfill := linefill.new(sessibh,sessibl,color.new(color.maroon,50))
+//     line.delete(sessibh[1])
+//     line.delete(sessibl[1])
+//     linefill.delete(sessfill[1])
+
+/// DAY OPEN EXTENDED
+sessionInfo = input.session("1800-0005", "Session")
+boxType = input.string("None", "Box Type", options = ["None", "Dynamic levels", "Fixed levels"])
+showBg = input.bool(false, "Show background")
+squareBox = boxType == "Fixed levels"
+dynamicBox = boxType == "Dynamic levels"
+showBox = squareBox or dynamicBox
+
+inSession = time(timeframe.period, sessionInfo)
+invisible = color.new(#FFFFFF,100)
+
+loLevel = ta.lowest(1)
+hiLevel = ta.highest(1)
+var hi = 10e-10
+var lo = 10e10
+// When a new period begins, reset hi/lo.
+
+if inSession and not inSession[1]
+    hi := dynamicBox ? high : hiLevel
+else
+    if dynamicBox
+        hi := high > hi? high : hi
+if inSession and not inSession[1]
+    lo := dynamicBox ? low : loLevel
+else
+    if dynamicBox
+        lo := low < lo? low : lo
+
+
+
+// LONDON LUNCH HOUR
+bgcolor(showBg and inSession ? color.maroon : na)
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+sessionInfo2_futures = input.session("0300-0400", "Session")
+sessionInfo2_cfd = input.session("0400-0500", "Session")
+sessionInfo2_crypto = input.session("0900-1000", "Session")
+boxType2 = input.string("Dynamic levels", "Box Type", options = ["None", "Dynamic levels", "Fixed levels"])
+showBg2 = input.bool(false, "Show background")
+squareBox2 = boxType2 == "Fixed levels"
+dynamicBox2 = boxType2 == "Dynamic levels"
+showBox2 = squareBox2 or dynamicBox2
+
+inSession2 = time(timeframe.period, syminfo.type == "crypto"? sessionInfo2_crypto : syminfo.type == "futures"? sessionInfo2_futures : sessionInfo2_cfd)
+// invisible2 = #FFFFFF
+
+loLevel2 = ta.lowest(1)
+hiLevel2 = ta.highest(1)
+var hi2 = 10e-10
+var lo2 = 10e10
+// When a new period begins, reset hi/lo.
+if inSession2 and not inSession2[1]
+    hi2 := dynamicBox2 ? high : hiLevel2
+else
+    if dynamicBox2
+        hi2 := high > hi2? high : hi2
+if inSession2 and not inSession2[1]
+    lo2 := dynamicBox2 ? low : loLevel2
+else
+    if dynamicBox2
+        lo2 := low < lo2? low : lo2
+
+
+
+// Plot background.
+bgcolor(showBg2 and inSession2 ? color.maroon : na)
+// //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+sessionInfo3_futures = input.session("0830-1605", "Session")
+sessionInfo3_cfd = input.session("0930-1705", "Session")
+sessionInfo3_crypto = input.session("0930-1705", "Session")  // NY local time; timezone param below makes this DST-aware
+boxType3 = input.string("Dynamic levels", "Box Type", options = ["None", "Dynamic levels", "Fixed levels"])
+showBg3 = input.bool(false, "Show background")
+squareBox3 = boxType3 == "Fixed levels"
+dynamicBox3 = boxType3 == "Dynamic levels"
+showBox3 = squareBox3 or dynamicBox3
+
+[m30hi, m30lo, m30o] = request.security_lower_tf(syminfo.ticker, timeframe.period=='60'? '30':na, [high, low, open])
+//m30lo = request.security_lower_tf(syminfo.ticker, timeframe.period=='60'? '30':na,low)
+
+var nyoltf_hi = 0.0
+var nyoltf_lo = 0.0
+var nyoltf_o = 0.0
+
+if ny_eff_hour == ny_eff_hr and timeframe.period=='60'   // DST-safe NY open
+    nyoltf_hi := getArrayValue(m30hi,1)
+    nyoltf_lo := getArrayValue(m30lo,1)
+    nyoltf_o := getArrayValue(m30o,1)
+
+
+// plot(nyoltf_hi)
+// plot(nyoltf_lo)
+
+// Crypto branch passes "America/New_York" timezone so the session string is interpreted in NY local time
+// and Pine Script automatically adjusts for EST/EDT (daylight savings). Futures and CFD branches unchanged.
+inSession3 = syminfo.type == "crypto"? time(timeframe.period, sessionInfo3_crypto, "America/New_York") : time(timeframe.period, syminfo.type == "futures"? sessionInfo3_futures : sessionInfo3_cfd)
+// invisible3 = #FFFFFF
+
+loLevel3 = ta.lowest(1)
+hiLevel3 = ta.highest(1)
+var hi3 = 10e-10
+var lo3 = 10e10
+// When a new period begins, reset hi/lo.
+if inSession3 and not inSession3[1]
+    if timeframe.period=='60'
+        hi3 := dynamicBox3 ? high > nyoltf_hi?high:nyoltf_hi : hiLevel3
+    else
+        hi3 := dynamicBox3 ? high : hiLevel3
+else
+    if dynamicBox3
+        hi3 := high > hi3? high : hi3
+if inSession3 and not inSession3[1]
+    if timeframe.period=='60'
+        lo3 := dynamicBox3 ? low < nyoltf_lo?low:nyoltf_lo : loLevel3
+    else
+        lo3 := dynamicBox3 ? low : loLevel3
+else
+    if dynamicBox3
+        lo3 := low < lo3? low : lo3
+
+// plot(nz(d1hi1[1])!=nz(d1hi1[0]) or nz(dopenhi[1])!=nz(dopenhi[0])? hi3:na)
+
+// Plot background.
+bgcolor(showBg3 and inSession3 ? color.blue : na)
+
+
+// //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+sessionInfo4 = input.session("1100-1300", "Session")
+boxType4 = input.string("None", "Box Type", options = ["None", "Dynamic levels", "Fixed levels"])
+showBg4 = input.bool(false, "Show background")
+squareBox4 = boxType4 == "Fixed levels"
+dynamicBox4 = boxType4 == "Dynamic levels"
+showBox4 = squareBox4 or dynamicBox4
+
+inSession4 = time(timeframe.period, sessionInfo4)
+// invisible4 = #FFFFFF
+
+loLevel4 = ta.lowest(1)
+hiLevel4 = ta.highest(1)
+var hi4 = 10e-10
+var lo4 = 10e10
+// When a new period begins, reset hi/lo.
+if inSession4 and not inSession4[1]
+    hi4 := dynamicBox4 ? high : hiLevel4
+else
+    if dynamicBox4
+        hi4 := high > hi4? high : hi4
+if inSession4 and not inSession4[1]
+    lo4 := dynamicBox4 ? low : loLevel4
+else
+    if dynamicBox4
+        lo4 := low < lo4? low : lo4
+
+
+// Plot background..
+bgcolor(showBg4 and inSession4 ? color.purple : na)
+
+if timeframe.period == '240' or timeframe.period == '480' or timeframe.period == 'M' or timeframe.period == 'W' or timeframe.period == 'D' //timeframe.period == '60' or 
+    hi := 0
+    lo := 0
+    hi2 := 0
+    lo2 := 0
+    hi3 := 0
+    lo3 := 0
+    hi4 := 0
+    lo4 := 0
+
+// day open candle extended
+hiPlot = plot(showBox and inSession ? hi : na, "Highs", invisible)
+loPlot = plot(showBox and inSession ? lo : na, "Lows", invisible)
+fill(hiPlot, loPlot, color.new(#0c3299,80))
+
+// 5-7 am range (lo lunch?)
+hiPlot2 = plot(showBox2 and inSession2 ? hi2 : na, "Highs", invisible)
+loPlot2 = plot(showBox2 and inSession2 ? lo2 : na, "Lows", invisible)
+fill(hiPlot2, loPlot2, color.new(#99390c, 20))
+
+// 930 to close range
+hiPlot3 = plot(showBox3 and inSession3 ? hi3 : na, "Highs", invisible)
+loPlot3 = plot(showBox3 and inSession3 ? lo3 : na, "Lows", invisible)
+fill(hiPlot3, loPlot3, color.new(#9e750d, 35))
+plot((timeframe.period=='60' or timeframe.period=='15' or timeframe.period=='5') and inSession3? nyoltf_o: na, "ny_o", color.black, style=plot.style_steplinebr)
+
+// 11-1pm range (ny lunch?)
+hiPlot4 = plot(showBox4 and inSession4 ? hi4 : na, "Highs", invisible)
+loPlot4 = plot(showBox4 and inSession4 ? lo4 : na, "Lows", invisible)
+fill(hiPlot4, loPlot4, color.new(#0c3299,80))
+
+
+// all sess open GRAY box hi lo fill
+fill(ltfo_hiplot, ltfo_loplot,color.new(color.black,50), fillgaps=false)
+fill(ltfdo_hiplot, ltfdo_loplot,color.new(color.black,50), fillgaps=false)
+// gap sess prev open RED box hi lo fill
+
+// NITE SESSION GAPS <============================================================================================================================
+fill(ltfpo_hiplot, ltfpo_loplot,color.new(#5c9769,50), fillgaps=false)
+// DAY SESSION GAPS
+//fill(ltfpdo_hiplot, ltfpdo_loplot,color.new(color.maroon,50), fillgaps=false)
+
+var wopenhi = 0.0
+var wopenlo = 0.0
+
+w_newperiod = request.security(syminfo.tickerid, 'W', open[1], lookahead=barmerge.lookahead_on)
+var w_newperiodkey = 1 
+if nz(w_newperiod[1])!=nz(w_newperiod[0])
+    // label.new(bar_index,high,"newday",xloc.bar_index,yloc.abovebar)
+    w_newperiodkey := 2
+
+if w_newperiodkey==2
+    if syminfo.type != "crypto"     // dayofweek==dayofweek.sunday
+        //if (dayofweek==dayofweek.sunday or dayofweek==dayofweek.monday) and nz(niteo_hi[1])==nz(niteo_hi[0])
+        if (nz(niteo_hi[1] != nz(niteo_hi[0])))
+            wopenhi := niteo_hi
+            wopenlo := niteo_lo
+            //if nz(niteo_hi[1]!=nz(niteo_hi[0]))
+            w_newperiodkey := 1
+            // label.new(bar_index,high,"done",xloc.bar_index,yloc.abovebar)
+            //wopenhi := (dayofweek==dayofweek.sunday or dayofweek==dayofweek.monday) and nz(niteo_hi[1])==nz(niteo_hi[0])?niteo_hi : wopenhi
+            //wopenlo := (dayofweek==dayofweek.sunday or dayofweek==dayofweek.monday) and nz(niteo_lo[1])==nz(niteo_lo[0])?niteo_lo : wopenlo
+        else
+            wopenhi := wopenhi
+            wopenlo := wopenlo
+            //w_newperiodkey := 1
+
+    else        // dayofweek==dayofweek.monday 
+        //if dayofweek==dayofweek.monday and hour<14 and nz(niteo_hi[1])==nz(niteo_hi[0])
+        if (nz(niteo_hi[1] == nz(niteo_hi[0])))    
+            wopenhi := niteo_hi
+            wopenlo := niteo_lo
+            //if nz(niteo_hi[1]!=nz(niteo_hi[0]))
+            w_newperiodkey := 1
+            // label.new(bar_index,high,"done",xloc.bar_index,yloc.abovebar)
+        else
+            wopenhi := wopenhi
+            wopenlo := wopenlo
+            
+        // wopenhi := dayofweek==dayofweek.monday and hour<14 and nz(niteo_hi[1])==nz(niteo_hi[0])?niteo_hi : wopenhi
+        // wopenlo := dayofweek==dayofweek.monday and hour<14 and nz(niteo_lo[1])==nz(niteo_lo[0])?niteo_lo : wopenlo
+else
+    wopenhi := wopenhi
+    wopenlo := wopenlo
+
+
+wopenhi_plot = plot(wopenhi, color=invisible)
+wopenlo_plot = plot(wopenlo, color=invisible)
+// weekly open range extended
+fill(wopenhi_plot, wopenlo_plot, color.new(color.olive, 72), fillgaps=false)

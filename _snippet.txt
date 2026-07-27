@@ -1,0 +1,7 @@
+    }
+      }
+
+      // â”€â”€ Order buttons (with toggle-off) â”€â”€
+      // Market SLRANGE
+      if(sparam == "RM_BuyMkt")  { HandleOrderBtnClick(sparam, +1, 0, false); return; }
+      if(spa

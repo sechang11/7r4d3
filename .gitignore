@@ -1,0 +1,28 @@
+# ── secrets ────────────────────────────────────────────────
+# Webhook URLs and any other credentials live here, never in source.
+LOCAL_SECRETS.txt
+*.secret
+
+# ── compiled EA binaries ───────────────────────────────────
+# Rebuild from source with MetaEditor. Also: compiled binaries embed
+# string literals, so committing them can leak anything in the source.
+*.ex4
+*.ex5
+
+# ── runtime data ───────────────────────────────────────────
+# Personal trading data: saved game plans and the command/audit journal.
+webapp/data/
+
+# ── build & tooling noise ──────────────────────────────────
+*.log
+node_modules/
+dist/
+.cache/
+
+# ── OS / editor ────────────────────────────────────────────
+Thumbs.db
+desktop.ini
+.DS_Store
+*.swp
+.vscode/
+.idea/

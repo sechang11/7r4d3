@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RiskManager — Live</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+  <header>
+    <h1>RISKMANAGER</h1>
+    <span id="conn" class="pill down"><span class="dot"></span><span id="connTxt">waiting for EA…</span></span>
+    <div class="spacer"></div>
+    <span class="sym" id="sym">—</span>
+    <span class="price" id="price">—</span>
+  </header>
+
+  <div id="versionBanner" class="banner" hidden></div>
+
+  <!-- engine state -->
+  <div class="grid">
+    <div class="card">
+      <h2>M15 Thrust</h2>
+      <div class="row"><span class="k">Trend</span><span class="v" id="m15Trend">—</span></div>
+      <div class="row"><span class="k">Flow</span><span class="v" id="m15Flow">—</span></div>
+      <div class="row"><span class="k">Swing High</span><span class="v" id="m15SwH">—</span></div>
+      <div class="row"><span class="k">Swing Low</span><span class="v" id="m15SwL">—</span></div>
+      <div class="row"><span class="k">Dealing Range</span><span class="v" id="m15Drange">—</span></div>
+      <div class="row"><span class="k">BOS armed</span><span class="v" id="m15Bos">—</span></div>
+      <div class="row"><span class="k">Last event</span><span class="v" id="m15Last">—</span></div>
+    </div>
+
+    <div class="card">
+      <h2>H4 Thrust</h2>
+      <div class="row"><span class="k">Trend</span><span class="v" id="h4Trend">—</span></div>
+      <div class="row"><span class="k">Flow</span><span class="v" id="h4Flow">—</span></div>
+      <div class="row"><span class="k">Swing High</span><span class="v" id="h4SwH">—</span></div>
+      <div class="row"><span class="k">Swing Low</span><span class="v" id="h4SwL">—</span></div>
+      <div class="row"><span class="k">Agrees with M15</span><span class="v" id="h4Agree">—</span></div>
+    </div>
+
+    <div class="card">
+      <h2>M5 Close-Trend</h2>
+      <div class="row"><span class="k">Trend</span><span class="v" id="ctrTrend">—</span></div>
+      <div class="row"><span class="k">Pattern flow</span><span class="v" id="ctrFlow">—</span></div>
+      <div class="row"><span class="k">Candle state</span><span class="v" id="ctrState">—</span></div>
+      <div class="row"><span class="k">Flip level</span><span class="v" id="ctrFlip">—</span></div>
+    </div>
+
+    <div class="card">
+      <h2>Risk — next order</h2>
+      <div class="row"><span class="k">Risk</span><span class="v" id="rkUsd">—</span></div>
+      <div class="row"><span class="k">SL Range</span><span class="v" id="rkSlPct">—</span></div>
+      <div class="row"><span class="k">R:R</span><span class="v" id="rkRR">—</span></div>
+      <div class="row"><span class="k">SL distance</span><span class="v" id="rkSlDist">—</span></div>
+      <div class="row"><span class="k">Lots</span><span class="v" id="rkLots">—</span></div>
+      <div class="row"><span class="k">Split</span><span class="v" id="rkSplit">—</span></div>
+    </div>
+
+    <div class="card">
+      <h2>Account</h2>
+      <div class="row"><span class="k">Balance</span><span class="v" id="acBal">—</span></div>
+      <div class="row"><span class="k">Equity</span><span class="v" id="acEq">—</span></div>
+      <div class="row"><span class="k">P/L symbol</span><span class="v" id="acPnlSym">—</span></div>
+      <div class="row"><span class="k">P/L all</span><span class="v" id="acPnlAll">—</span></div>
+      <div class="row"><span class="k">Equity guards</span><span class="v" id="acGuards">—</span></div>
+    </div>
+
+    <div class="card">
+      <h2>Exposure</h2>
+      <div class="row"><span class="k">Open positions</span><span class="v" id="exCount">—</span></div>
+      <div class="row"><span class="k">Lots</span><span class="v" id="exLots">—</span></div>
+      <div class="row"><span class="k">Risk at stop</span><span class="v" id="exRisk">—</span></div>
+      <div class="row"><span class="k">Reward at target</span><span class="v" id="exRew">—</span></div>
+      <div class="row"><span class="k">Armed order</span><span class="v" id="exArmed">—</span></div>
+    </div>
+  </div>
+
+  <!-- entry patterns -->
+  <div class="card wide">
+    <div class="bucket-head" style="margin-bottom:12px">
+      <h2 style="margin:0">Entry patterns</h2>
+      <span class="desc">availability computed by the EA (<code>IsOrderBtnAvailable</code>) — never recomputed here</span>
+      <div class="spacer"></div>
+      <div class="arm" id="armBox">
+        <span class="note" id="armNote">remote commands disarmed</span>
+        <button id="armBtn">ARM REMOTE</button>
+      </div>
+    </div>
+    <div id="buckets"></div>
+  </div>
+
+  <footer>
+    EA is the single source of truth — this page renders its state and never recomputes it.
+    Contract <code id="ctrVer">—</code> · see <code>TRADING_SYSTEM.md</code>
+  </footer>
+
+  <script src="/app.js"></script>
+</body>
+</html>

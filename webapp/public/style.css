@@ -1,0 +1,123 @@
+/* Palette lifted from the EA's #define block so the web app and the
+   on-chart dashboard read as one system. */
+:root {
+  --bg:        #0e0e16;   /* CLR_PANEL_BG   */
+  --section:   #181a26;   /* CLR_SECTION_BG */
+  --plc:       #1e202d;   /* CLR_BTN_PLC    */
+  --border:    #373a4b;   /* CLR_BORDER     */
+  --gold:      #b99b37;   /* CLR_BORDER_GOLD*/
+  --on:        #1976d2;   /* CLR_BTN_ON     */
+  --buy:       #009650;   /* CLR_BTN_BUY    */
+  --sell:      #c32323;   /* CLR_BTN_SELL   */
+  --teal:      #008282;   /* CLR_BTN_TEAL   */
+  --warn:      #b47800;   /* CLR_BTN_WARN   */
+  --text:      #ffffff;
+  --dim:       #8c91aa;   /* CLR_TEXT_DIM   */
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.5 "Segoe UI", system-ui, -apple-system, sans-serif;
+  padding: 16px;
+}
+
+h1 { font-size: 18px; margin: 0; letter-spacing: .5px; }
+h2 {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 1.2px;
+  color: var(--dim); margin: 0 0 10px; font-weight: 600;
+}
+
+/* ── header ─────────────────────────────────────────────── */
+header {
+  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  border: 2px solid var(--gold); background: var(--section);
+  padding: 12px 16px; border-radius: 6px; margin-bottom: 14px;
+}
+.spacer { flex: 1; }
+
+.pill {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 4px 11px; border-radius: 999px;
+  font-size: 12px; font-weight: 600; background: var(--plc);
+}
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--dim); }
+.pill.live  .dot { background: #00e07a; box-shadow: 0 0 8px #00e07a; }
+.pill.stale .dot { background: var(--warn); }
+.pill.down  .dot { background: var(--sell); }
+
+.price { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.sym   { font-size: 15px; font-weight: 700; letter-spacing: 1px; }
+
+.banner {
+  background: var(--sell); color: #fff; padding: 10px 14px;
+  border-radius: 5px; margin-bottom: 14px; font-weight: 600;
+}
+
+/* ── layout ─────────────────────────────────────────────── */
+.grid {
+  display: grid; gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  margin-bottom: 14px;
+}
+.card {
+  background: var(--section); border: 1px solid var(--border);
+  border-radius: 6px; padding: 13px 15px;
+}
+.card.wide { grid-column: 1 / -1; }
+
+.row {
+  display: flex; justify-content: space-between; gap: 12px;
+  padding: 3px 0; font-variant-numeric: tabular-nums;
+}
+.row .k { color: var(--dim); }
+.row .v { font-weight: 600; }
+
+.up   { color: #00e07a; }
+.down { color: #ff6b6b; }
+.mute { color: var(--dim); }
+
+/* ── pattern tiles ──────────────────────────────────────── */
+.bucket { margin-bottom: 14px; }
+.bucket-head {
+  display: flex; align-items: baseline; gap: 10px; margin-bottom: 7px;
+}
+.bucket-head .desc { color: var(--dim); font-size: 12px; }
+
+.tiles { display: flex; flex-wrap: wrap; gap: 7px; }
+
+.tile {
+  min-width: 104px; padding: 9px 12px; border-radius: 5px;
+  border: 1px solid var(--border); background: var(--plc);
+  color: var(--dim); font-weight: 700; font-size: 13px;
+  text-align: center; cursor: not-allowed; transition: .12s;
+}
+.tile .sub {
+  display: block; font-size: 10px; font-weight: 500;
+  text-transform: uppercase; letter-spacing: .6px; opacity: .75;
+}
+.tile.ok        { color: #fff; cursor: pointer; }
+.tile.ok.buy    { background: var(--buy);  border-color: #00b862; }
+.tile.ok.sell   { background: var(--sell); border-color: #e04040; }
+.tile.ok:hover  { transform: translateY(-1px); filter: brightness(1.18); }
+.tile.blocked   { opacity: .45; }
+
+/* ── remote arm ─────────────────────────────────────────── */
+.arm {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 14px; border-radius: 5px;
+  border: 1px solid var(--border); background: var(--plc);
+}
+.arm button {
+  font: inherit; font-weight: 700; cursor: pointer;
+  padding: 6px 15px; border-radius: 4px; border: none;
+  background: var(--sell); color: #fff;
+}
+.arm.on button { background: var(--buy); }
+.arm .note { color: var(--dim); font-size: 12px; }
+
+footer { color: var(--dim); font-size: 11px; margin-top: 18px; }
+code { background: var(--plc); padding: 1px 5px; border-radius: 3px; }
