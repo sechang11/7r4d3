@@ -72,11 +72,18 @@ points health checks at `/api/health`.
 
 | Variable | Value | Why |
 |---|---|---|
-| `RM_TOKEN` | long random string | required — the server won't boot without it |
-| `HOST` | `0.0.0.0` | Railway routes to the container, not loopback |
+| `RM_TOKEN` | long random string | **required** — the server refuses to boot without it |
 | `RM_DATA_DIR` | `/data` | see the volume note below |
 
-Railway injects `PORT` automatically — don't set it.
+Railway injects `PORT` automatically — don't set it. `HOST` is detected: the
+server binds `0.0.0.0` when it sees a PaaS environment (Railway, Render, Fly,
+Heroku, Cloud Run) and loopback otherwise. Set `HOST` explicitly only if you
+need to override that.
+
+> **If the health check fails with "service unavailable":** check the deploy
+> logs. Either the server refused to boot because `RM_TOKEN` is missing (it says
+> so in a large banner), or it bound loopback — the startup line prints the
+> address and whether a PaaS was detected.
 
 **2 · Add a volume.** Railway's filesystem is **ephemeral**: every redeploy wipes
 it. Mount a volume at `/data` and set `RM_DATA_DIR=/data`, otherwise your saved

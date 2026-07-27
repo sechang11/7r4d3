@@ -20,7 +20,18 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const PORT = Number(process.env.PORT ?? 8787);
-const HOST = process.env.HOST ?? '127.0.0.1';
+
+// A container on a PaaS must bind 0.0.0.0 or the platform's router can't reach
+// it — binding loopback there produces a "service unavailable" health check
+// failure even though the process is running fine. Locally we still default to
+// loopback, which is the safe choice. Explicit HOST always wins.
+const ON_PAAS = Boolean(
+  process.env.RAILWAY_ENVIRONMENT || process.env.RAILWAY_SERVICE_ID ||
+  process.env.RAILWAY_PROJECT_ID  || process.env.RENDER ||
+  process.env.FLY_APP_NAME        || process.env.DYNO ||
+  process.env.K_SERVICE
+);
+const HOST = process.env.HOST ?? (ON_PAAS ? '0.0.0.0' : '127.0.0.1');
 
 // Contract version this server was built against. Compared to the EA's
 // RM_VERSION on every snapshot so a stale EA can't masquerade as live.
@@ -41,9 +52,20 @@ fs.mkdirSync(DATA_DIR, { recursive: true });
 // ── fail-safe: never expose an unauthenticated API beyond loopback ──
 const isLoopback = HOST === '127.0.0.1' || HOST === 'localhost' || HOST === '::1';
 if (!RM_TOKEN && !isLoopback) {
-  console.error('REFUSING TO START: HOST is %s (not loopback) but RM_TOKEN is unset.', HOST);
-  console.error('An open /api/commands lets anyone queue commands your EA will execute.');
-  console.error('Set RM_TOKEN to a long random string and restart.');
+  console.error('');
+  console.error('=========================================================');
+  console.error('  REFUSING TO START — RM_TOKEN is not set');
+  console.error('=========================================================');
+  console.error(`  Binding to ${HOST}, which is reachable from outside this`);
+  console.error('  process. Without a token, /api/commands is open to anyone,');
+  console.error('  and that endpoint queues commands your EA executes.');
+  console.error('');
+  console.error('  Fix: add a service variable');
+  console.error('      RM_TOKEN = <long random string>');
+  console.error('  then redeploy. Generate one with:');
+  console.error('      node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))"');
+  console.error('=========================================================');
+  console.error('');
   process.exit(1);
 }
 
@@ -248,10 +270,17 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
+server.on('error', (err) => {
+  console.error(`FAILED TO BIND ${HOST}:${PORT} — ${err.code ?? err.message}`);
+  if (err.code === 'EADDRINUSE') console.error('Another process is already on that port.');
+  process.exit(1);
+});
+
 server.listen(PORT, HOST, () => {
   console.log(`RiskManager bridge  →  http://${HOST}:${PORT}`);
   console.log(`contract version    →  ${CONTRACT_VERSION}`);
   console.log(`data dir            →  ${DATA_DIR}`);
+  console.log(`environment         →  ${ON_PAAS ? 'PaaS detected — bound to all interfaces' : 'local'}`);
   console.log(`auth                →  ${RM_TOKEN ? 'ON (RM_TOKEN set)' : 'OFF — loopback only'}`);
   if (!RM_TOKEN) {
     console.log('');
