@@ -247,6 +247,11 @@ input int    InpStatePostSec = 3;    // Seconds between state POSTs
 input bool   InpAllowRemote  = false;// Allow remote ARM commands from the web app
 input int    InpCmdPollSec   = 2;    // Seconds between command polls (when remote allowed)
 
+//--- Game-plan enforcement -------------------------------------------
+// Set BOTH to false to disable enforcement entirely (escape hatch).
+input bool   InpPlanEnforce    = true; // Refuse ARMING patterns the plan forbids
+input bool   InpPlanBlockEnter = true; // Also refuse ENTER while a session cap is hit
+
 //--- Dashboard layout constants
 #define PANEL_X         30
 #define PANEL_Y         30
@@ -930,6 +935,13 @@ void BuildDashboard()
    CreateButton("RM_BtnHide", x - 3, y - 3 - 30, 36, 26, "\\x25C0",
                 CLR_BTN_OFF, CLR_TEXT, 10);
    ObjectSetString(0, "RM_BtnHide", OBJPROP_TOOLTIP, "Toggle dashboard visibility (X key)");
+
+   // Game-plan status, on the same row as the hide button
+   CreateLabel("RM_PlanLbl", x + 40, y - 3 - 28, "PLAN: \x2014", CLR_TEXT_DIM, 10);
+   ObjectSetString(0, "RM_PlanLbl", OBJPROP_TOOLTIP,
+      "Session game plan pulled from the web app.\n"
+      "Blocked patterns are greyed and refuse clicks.\n"
+      "Disable with InpPlanEnforce / InpPlanBlockEnter.");
 
    int cy = y + pad;
 
@@ -6648,6 +6660,19 @@ void ExecuteTrade()
       return;
    }
 
+   // Game plan: refuse submission while a session cap is hit.
+   // Only ENTRIES pass through here; every exit path is untouched.
+   if(InpPlanBlockEnter)
+   {
+      string lock = PlanSessionLockReason();
+      if(lock != "")
+      {
+         Print("RiskManager: ENTER REFUSED \x2014 ", lock);
+         Alert("Entry blocked by your game plan: ", lock);
+         return;
+      }
+   }
+
    double entry = ObjectGetDouble(0, g_entryLineName, OBJPROP_PRICE);
    double sl    = ObjectGetDouble(0, g_slLineName, OBJPROP_PRICE);
    double tp    = ObjectGetDouble(0, g_tpLineName, OBJPROP_PRICE);
@@ -9449,6 +9474,8 @@ string BridgeHeaders()
 bool ArmPatternRemote(string b, string &note)
 {
    if(!IsOrderBtnAvailable(b)) { note = "gate not satisfied for " + b; return false; }
+   string blocked = PlanBlockReason(b);
+   if(blocked != "") { note = blocked; return false; }
 
    // Clear any previously armed setup first (mirrors the click path).
    CancelHiddenOrder();
@@ -9537,6 +9564,292 @@ void PollCommands()
 
    Print("RM bridge: command #", id, " ", action, " ", button, " -> ", ok ? "OK" : "REFUSED", " (", note, ")");
    AckCommand(id, ok, note);
+}
+
+//+==================================================================+
+//|              GAME-PLAN ENFORCEMENT (EA-side, binding)            |
+//|------------------------------------------------------------------|
+//| The web app's enforcement is advisory — you can close the tab.    |
+//| This makes it binding: the EA pulls the plan and refuses entries  |
+//| it forbids, on the chart itself.                                  |
+//|                                                                   |
+//| Three hard rules, in order of importance:                         |
+//|                                                                   |
+//|  1. EXITS ARE NEVER BLOCKED. Only entries. Closing, partials,     |
+//|     breakeven, cancel, trailing and SET SL/TP always work. An EA  |
+//|     that will not let you out is far more dangerous than one      |
+//|     that lets you in.                                             |
+//|  2. The plan is CACHED. If the bridge goes away we keep enforcing |
+//|     the last known plan and show its age, rather than silently    |
+//|     reverting to unrestricted.                                    |
+//|  3. There is an ESCAPE HATCH: InpPlanEnforce / InpPlanBlockEnter. |
+//|     A bug in here must never be able to trap you.                 |
+//+==================================================================+
+
+struct PlanState
+{
+   bool     loaded;
+   datetime fetchedAt;
+   bool     active;
+   string   bias;              // both | long | short | standaside
+   string   buckets;           // raw array body, e.g.  "A","C"
+   int      maxTrades;
+   double   maxLossUsd;
+   double   minDrangePct;
+   bool     requireH4Agree;
+   bool     countAllSymbols;
+   string   winStart, winEnd;  // "HH:MM" broker time, "" = no restriction
+   double   baselineEquity;
+   int      tradesAtActivation;
+};
+PlanState g_plan;
+
+double JsonGetDouble(string src, string key)
+{
+   string pat = "\"" + key + "\":";
+   int i = StringFind(src, pat);
+   if(i < 0) return 0;
+   i += StringLen(pat);
+   int n = StringLen(src), j = i;
+   while(j < n)
+   {
+      ushort c = StringGetCharacter(src, j);
+      if((c < '0' || c > '9') && c != '.' && c != '-') break;
+      j++;
+   }
+   if(j == i) return 0;
+   return StringToDouble(StringSubstr(src, i, j - i));
+}
+
+bool JsonGetBool(string src, string key)
+{
+   string pat = "\"" + key + "\":";
+   int i = StringFind(src, pat);
+   if(i < 0) return false;
+   return (StringSubstr(src, i + StringLen(pat), 4) == "true");
+}
+
+string JsonGetArray(string src, string key)
+{
+   string pat = "\"" + key + "\":[";
+   int i = StringFind(src, pat);
+   if(i < 0) return "";
+   i += StringLen(pat);
+   int j = StringFind(src, "]", i);
+   if(j < 0) return "";
+   return StringSubstr(src, i, j - i);
+}
+
+//+------------------------------------------------------------------+
+//| Which thesis bucket a button belongs to. "" means it is not an   |
+//| order button at all, which is also how we detect order clicks.   |
+//| Mirrors BUCKETS in webapp/public/plan.js.                        |
+//+------------------------------------------------------------------+
+string BucketOfButton(string b)
+{
+   if(b == "RM_BuyMktSw"  || b == "RM_SellMktSw"  ||
+      b == "RM_BuyLmtBOS" || b == "RM_SellLmtBOS" ||
+      b == "RM_BuyLmtBoR" || b == "RM_SellLmtBoR" ||
+      b == "RM_BuyStpBK"  || b == "RM_SellStpBK"  ||
+      b == "RM_BuyStpChC" || b == "RM_SellStpChC") return "A";
+   if(b == "RM_BuyLmtChR" || b == "RM_SellLmtChR") return "B";
+   if(b == "RM_BuyStpCH"  || b == "RM_SellStpCH"  ||
+      b == "RM_BuyStpCB"  || b == "RM_SellStpCB")  return "C";
+   if(b == "RM_BuyMktUFV" || b == "RM_SellMktUFV") return "D";
+   if(b == "RM_BuyLmtDK"  || b == "RM_SellLmtDK"  ||
+      b == "RM_BuyMkt"    || b == "RM_SellMkt"    ||
+      b == "RM_BuyLmt"    || b == "RM_SellLmt"    ||
+      b == "RM_BuyStp"    || b == "RM_SellStp")    return "E";
+   return "";
+}
+
+bool IsOrderButton(string b) { return BucketOfButton(b) != ""; }
+
+//+------------------------------------------------------------------+
+//| Fetch the plan from the bridge. Throttled; keeps the last good    |
+//| copy on failure so a network blip cannot silently disable         |
+//| enforcement.                                                      |
+//+------------------------------------------------------------------+
+void FetchPlan()
+{
+   if(InpBridgeURL == "") return;
+   if(!InpPlanEnforce && !InpPlanBlockEnter) return;
+   static datetime lastFetch = 0;
+   if(TimeCurrent() - lastFetch < 10) return;
+   lastFetch = TimeCurrent();
+
+   char post[], result[];
+   string rh;
+   int res = WebRequest("GET", InpBridgeURL + "/api/plan", BridgeHeaders(), 1500,
+                        post, result, rh);
+   if(res != 200) return;                       // keep the cached plan
+
+   string body = CharArrayToString(result, 0, ArraySize(result), CP_UTF8);
+   if(StringFind(body, "\"plan\":null") >= 0)   // no plan saved yet
+   {
+      g_plan.loaded = true;
+      g_plan.active = false;
+      g_plan.fetchedAt = TimeCurrent();
+      return;
+   }
+
+   g_plan.loaded             = true;
+   g_plan.fetchedAt          = TimeCurrent();
+   g_plan.active             = JsonGetBool(body, "active");
+   g_plan.bias               = JsonGetStr(body, "bias");
+   g_plan.buckets            = JsonGetArray(body, "buckets");
+   g_plan.maxTrades          = (int)JsonGetInt(body, "maxTrades");
+   g_plan.maxLossUsd         = JsonGetDouble(body, "maxSessionLossUsd");
+   g_plan.minDrangePct       = JsonGetDouble(body, "minDrangePct");
+   g_plan.requireH4Agree     = JsonGetBool(body, "requireH4Agree");
+   g_plan.countAllSymbols    = JsonGetBool(body, "countAllSymbols");
+   g_plan.winStart           = JsonGetStr(body, "windowStart");
+   g_plan.winEnd             = JsonGetStr(body, "windowEnd");
+   g_plan.baselineEquity     = JsonGetDouble(body, "baselineEquity");
+   g_plan.tradesAtActivation = (int)JsonGetInt(body, "tradesAtActivation");
+}
+
+int HhmmToMinutes(string s)
+{
+   int c = StringFind(s, ":");
+   if(c <= 0) return -1;
+   return (int)StringToInteger(StringSubstr(s, 0, c)) * 60
+        + (int)StringToInteger(StringSubstr(s, c + 1));
+}
+
+int PlanTradesTaken()
+{
+   if(!g_plan.loaded || g_plan.tradesAtActivation < 0) return 0;
+   int now = CountTradesToday(!g_plan.countAllSymbols);
+   int n = now - g_plan.tradesAtActivation;
+   return (n > 0) ? n : 0;
+}
+
+//+------------------------------------------------------------------+
+//| Session-wide lock. Non-empty return = nothing may be entered.    |
+//+------------------------------------------------------------------+
+string PlanSessionLockReason()
+{
+   if(!g_plan.loaded || !g_plan.active) return "";
+
+   if(g_plan.bias == "standaside") return "plan: stand aside today";
+
+   if(g_plan.maxTrades > 0)
+   {
+      int taken = PlanTradesTaken();
+      if(taken >= g_plan.maxTrades)
+         return StringFormat("plan: trade cap %d/%d", taken, g_plan.maxTrades);
+   }
+
+   if(g_plan.maxLossUsd > 0 && g_plan.baselineEquity > 0)
+   {
+      double down = g_plan.baselineEquity - AccountInfoDouble(ACCOUNT_EQUITY);
+      if(down >= g_plan.maxLossUsd)
+         return StringFormat("plan: loss cap $%.0f/$%.0f", down, g_plan.maxLossUsd);
+   }
+
+   int a = HhmmToMinutes(g_plan.winStart);
+   int b = HhmmToMinutes(g_plan.winEnd);
+   if(a >= 0 && b >= 0)
+   {
+      MqlDateTime dt;
+      TimeToStruct(TimeCurrent(), dt);
+      int now = dt.hour * 60 + dt.min;
+      bool inWindow = (a <= b) ? (now >= a && now <= b) : (now >= a || now <= b);
+      if(!inWindow)
+         return "plan: outside window " + g_plan.winStart + "-" + g_plan.winEnd;
+   }
+   return "";
+}
+
+//+------------------------------------------------------------------+
+//| Per-pattern block. Non-empty return = this entry is forbidden.   |
+//| Mirrors evaluatePattern() in plan.js.                            |
+//+------------------------------------------------------------------+
+string PlanBlockReason(string btn)
+{
+   if(!InpPlanEnforce) return "";
+   if(!g_plan.loaded || !g_plan.active) return "";
+
+   string lock = PlanSessionLockReason();
+   if(lock != "") return lock;
+
+   int dir = (StringFind(btn, "RM_Buy") == 0) ? +1 : -1;
+
+   if(g_plan.bias == "long"  && dir < 0) return "plan: long-only";
+   if(g_plan.bias == "short" && dir > 0) return "plan: short-only";
+
+   string bk = BucketOfButton(btn);
+   if(bk != "" && StringFind(g_plan.buckets, "\"" + bk + "\"") < 0)
+      return "plan: bucket " + bk + " excluded";
+
+   if(g_plan.requireH4Agree)
+   {
+      int want = (dir > 0) ? 1 : 2;
+      if(g_h4_tTrend != 0 && g_h4_tTrend != want)
+         return "plan: H4 disagrees";
+   }
+
+   if(g_plan.minDrangePct > 0)
+   {
+      double prevRange = GetPrevDailyRange();
+      double dr = 0;
+      if(prevRange > 0 && g_tt_swingHigh > 0 && g_tt_swingLow > 0)
+         dr = (g_tt_swingHigh - g_tt_swingLow) / prevRange * 100.0;
+      if(dr < g_plan.minDrangePct)
+         return StringFormat("plan: range %.0f%% < %.0f%%", dr, g_plan.minDrangePct);
+   }
+   return "";
+}
+
+//+------------------------------------------------------------------+
+//| Grey out plan-blocked order buttons, and show plan status.        |
+//| Runs on the timer so it tracks plan edits without a click.        |
+//+------------------------------------------------------------------+
+void ApplyPlanGating()
+{
+   if(g_dashboardHidden) return;
+
+   string names[26] = {
+      "RM_BuyMkt","RM_SellMkt","RM_BuyMktSw","RM_SellMktSw","RM_BuyMktUFV","RM_SellMktUFV",
+      "RM_BuyLmt","RM_SellLmt","RM_BuyLmtDK","RM_SellLmtDK","RM_BuyLmtBOS","RM_SellLmtBOS",
+      "RM_BuyLmtChR","RM_SellLmtChR","RM_BuyLmtBoR","RM_SellLmtBoR",
+      "RM_BuyStp","RM_SellStp","RM_BuyStpCH","RM_SellStpCH","RM_BuyStpChC","RM_SellStpChC",
+      "RM_BuyStpBK","RM_SellStpBK","RM_BuyStpCB","RM_SellStpCB" };
+
+   for(int i = 0; i < 26; i++)
+   {
+      if(ObjectFind(0, names[i]) < 0) continue;
+      if(PlanBlockReason(names[i]) != "")
+      {
+         ObjectSetInteger(0, names[i], OBJPROP_BGCOLOR, CLR_BTN_PLC);
+         ObjectSetInteger(0, names[i], OBJPROP_COLOR,   CLR_TEXT_DIM);
+      }
+   }
+
+   // ── status line above the panel ──
+   string txt; color clr;
+   if(!InpPlanEnforce && !InpPlanBlockEnter) { txt = "PLAN: enforcement OFF"; clr = CLR_TEXT_DIM; }
+   else if(!g_plan.loaded)                   { txt = "PLAN: not loaded";      clr = CLR_TEXT_DIM; }
+   else if(!g_plan.active)                   { txt = "PLAN: none active";     clr = CLR_TEXT_DIM; }
+   else
+   {
+      string lock = PlanSessionLockReason();
+      if(lock != "") { txt = "LOCKED \x2014 " + lock; clr = C'255,90,90'; }
+      else
+      {
+         txt = "PLAN: " + g_plan.bias + " \x2502 " + g_plan.buckets;
+         if(g_plan.maxTrades > 0)
+            txt += StringFormat(" \x2502 %d/%d trades", PlanTradesTaken(), g_plan.maxTrades);
+         clr = C'120,220,140';
+      }
+      // Loud if the cached plan has gone stale — enforcement is still running
+      // off it, so you should know it is no longer being refreshed.
+      if(TimeCurrent() - g_plan.fetchedAt > 120)
+         { txt += "  (stale)"; clr = CLR_BTN_WARN; }
+   }
+   ObjectSetString(0, "RM_PlanLbl", OBJPROP_TEXT, txt);
+   ObjectSetInteger(0, "RM_PlanLbl", OBJPROP_COLOR, clr);
 }
 
 //+------------------------------------------------------------------+
@@ -9947,6 +10260,21 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
 
    if(id == CHARTEVENT_OBJECT_CLICK)
    {
+      // ── Game-plan gate ── single choke point for the 26 order buttons.
+      // Exits, partials, breakeven, cancel and trailing are not order
+      // buttons and are deliberately never reachable from here.
+      if(IsOrderButton(sparam))
+      {
+         string blocked = PlanBlockReason(sparam);
+         if(blocked != "")
+         {
+            ObjectSetInteger(0, sparam, OBJPROP_STATE, false);
+            Print("RiskManager: REFUSED ", sparam, " \x2014 ", blocked);
+            Alert("Blocked by your game plan: ", blocked);
+            return;
+         }
+      }
+
       // â”€â”€ Toggle groups â”€â”€
       for(int i = 0; i < 3; i++)
       {
@@ -10513,4 +10841,6 @@ void OnTimer()
    CheckCTrendAlert();
    PostState();          // web bridge: throttled state snapshot
    PollCommands();       // web bridge: remote ARM commands (opt-in)
+   FetchPlan();          // game plan: refresh cached copy
+   ApplyPlanGating();    // game plan: grey blocked buttons + status line
 }
