@@ -1,0 +1,16 @@
+{
+  "name": "riskmanager-bridge",
+  "version": "6.1.0",
+  "private": true,
+  "description": "Web bridge and session game-plan enforcement for the RiskManager MetaTrader EA",
+  "type": "module",
+  "main": "webapp/server.mjs",
+  "scripts": {
+    "start": "node webapp/server.mjs",
+    "dev": "node webapp/server.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "UNLICENSED"
+}

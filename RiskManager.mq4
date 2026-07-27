@@ -242,6 +242,7 @@ input string InpDiscordWebhook = "";  // Discord Webhook URL
 #define RM_VERSION "6.01"
 
 input string InpBridgeURL    = "";   // Web bridge base URL, blank = OFF (e.g. http://127.0.0.1:8787)
+input string InpBridgeToken  = "";   // Bridge shared secret (must match RM_TOKEN on the server)
 input int    InpStatePostSec = 3;    // Seconds between state POSTs
 
 //--- Dashboard layout constants
@@ -9321,6 +9322,8 @@ void PostState()
 
    string body = BuildStateJson();
    string headers = "Content-Type: application/json\r\n";
+   if(InpBridgeToken != "")
+      headers += "Authorization: Bearer " + InpBridgeToken + "\r\n";
    char post[], result[];
    string resultHeaders;
    StringToCharArray(body, post, 0, StringLen(body), CP_UTF8);
@@ -9330,7 +9333,14 @@ void PostState()
    static bool warned = false;
    if(res != 200 && res != 204)
    {
-      if(!warned) { Print("RM bridge: state POST failed HTTP ", res, " err=", GetLastError()); warned = true; }
+      if(!warned)
+      {
+         if(res == 401)
+            Print("RM bridge: 401 unauthorised \x2014 InpBridgeToken does not match the server's RM_TOKEN.");
+         else
+            Print("RM bridge: state POST failed HTTP ", res, " err=", GetLastError());
+         warned = true;
+      }
    }
    else warned = false;
 }

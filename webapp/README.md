@@ -14,14 +14,14 @@ to `app.js`.
 
 ---
 
-## Run it
+## Run it locally
 
 ```bash
-node webapp/server.mjs
+npm start
 ```
 
 No dependencies, no build step. Defaults to `http://127.0.0.1:8787`, bound to
-loopback only — nothing is exposed to your network. Override with `PORT` / `HOST`.
+loopback only — nothing is exposed to your network.
 
 ## Connect the EA
 
@@ -29,10 +29,71 @@ loopback only — nothing is exposed to your network. Override with `PORT` / `HO
    Add: `http://127.0.0.1:8787`
 2. On the chart, open the EA properties and set:
    - `InpBridgeURL` = `http://127.0.0.1:8787`
+   - `InpBridgeToken` = your `RM_TOKEN` (leave blank if running locally without one)
    - `InpStatePostSec` = `3` (default)
 3. Re-attach the EA. The header pill should go green within a few seconds.
 
 Leaving `InpBridgeURL` blank disables the bridge entirely — zero network activity.
+
+---
+
+## Authentication
+
+Every `/api/*` route is guarded by a shared secret in the `RM_TOKEN` environment
+variable. `/api/health` is deliberately public so platform health checks work; it
+exposes nothing but "a server is up" and the contract version.
+
+| Client | How it presents the token |
+|---|---|
+| EA | `Authorization: Bearer <InpBridgeToken>` header on each POST |
+| Browser | prompts once, stores in `localStorage`, re-prompts on any 401 |
+
+Comparison is constant-time, so the token can't be recovered by timing responses.
+
+**Fail-safe:** if `HOST` is anything other than loopback and `RM_TOKEN` is unset,
+the server **refuses to start**. An open `/api/commands` would let anyone queue
+commands your EA executes — that must never be reachable unauthenticated.
+
+Generate a token with:
+
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
+
+---
+
+## Deploying to Railway
+
+The app is a plain Node server, so Nixpacks builds it from the root
+`package.json` with no extra config. `railway.json` sets the start command and
+points health checks at `/api/health`.
+
+**1 · Set variables** (Railway → your service → Variables):
+
+| Variable | Value | Why |
+|---|---|---|
+| `RM_TOKEN` | long random string | required — the server won't boot without it |
+| `HOST` | `0.0.0.0` | Railway routes to the container, not loopback |
+| `RM_DATA_DIR` | `/data` | see the volume note below |
+
+Railway injects `PORT` automatically — don't set it.
+
+**2 · Add a volume.** Railway's filesystem is **ephemeral**: every redeploy wipes
+it. Mount a volume at `/data` and set `RM_DATA_DIR=/data`, otherwise your saved
+plan and the entire command journal vanish on each deploy. (The state snapshot
+doesn't matter — the EA re-posts within seconds.)
+
+**3 · Point the EA at it:**
+- `InpBridgeURL` = `https://<your-app>.up.railway.app`
+- `InpBridgeToken` = the same `RM_TOKEN`
+- Whitelist that https URL under **Tools → Options → Expert Advisors**
+
+Railway terminates TLS, so the token is never sent in the clear.
+
+> **Consider a tunnel instead.** If you only want to reach the dashboard from
+> your phone, Cloudflare Tunnel or Tailscale gives you that while the server
+> stays bound to loopback with no public attack surface at all. Railway is the
+> better fit when MetaTrader itself runs on a VPS.
 
 ---
 
@@ -52,6 +113,8 @@ you the payload may be misaligned, rather than quietly rendering wrong numbers.
 ---
 
 ## Endpoints
+
+All routes below require the token except `/api/health`.
 
 | Method | Path | Used by | Purpose |
 |---|---|---|---|
@@ -100,7 +163,10 @@ webapp/
 | Bridge server | ✅ |
 | Live dashboard | ✅ |
 | Command queue + idempotency | ✅ server-side |
+| Game-plan builder + enforcement | ✅ web-side |
+| Auth (`RM_TOKEN`) + fail-safe bind | ✅ |
+| Railway deploy config | ✅ |
 | EA command poller | ⬜ next |
+| `tradesTaken` from EA deal history | ⬜ |
 | Definitions extractor (MQL → JSON) | ⬜ |
 | TS engine port + conformance harness | ⬜ |
-| Game-plan builder + enforcement | ⬜ |

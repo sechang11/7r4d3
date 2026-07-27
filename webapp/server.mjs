@@ -14,6 +14,7 @@
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -25,10 +26,26 @@ const HOST = process.env.HOST ?? '127.0.0.1';
 // RM_VERSION on every snapshot so a stale EA can't masquerade as live.
 const CONTRACT_VERSION = '6.01';
 
-const DATA_DIR  = path.join(__dirname, 'data');
+// Shared secret guarding every /api/* route. Set RM_TOKEN in the environment
+// (never in source). Both the EA and the browser must present it.
+const RM_TOKEN = process.env.RM_TOKEN ?? '';
+
+// Railway and similar platforms have an EPHEMERAL filesystem — anything under
+// the app directory is wiped on redeploy. Point RM_DATA_DIR at a mounted
+// volume there so the plan and the journal survive.
+const DATA_DIR  = process.env.RM_DATA_DIR ?? path.join(__dirname, 'data');
 const PLAN_FILE = path.join(DATA_DIR, 'plan.json');
 const JOURNAL   = path.join(DATA_DIR, 'journal.jsonl');
 fs.mkdirSync(DATA_DIR, { recursive: true });
+
+// ── fail-safe: never expose an unauthenticated API beyond loopback ──
+const isLoopback = HOST === '127.0.0.1' || HOST === 'localhost' || HOST === '::1';
+if (!RM_TOKEN && !isLoopback) {
+  console.error('REFUSING TO START: HOST is %s (not loopback) but RM_TOKEN is unset.', HOST);
+  console.error('An open /api/commands lets anyone queue commands your EA will execute.');
+  console.error('Set RM_TOKEN to a long random string and restart.');
+  process.exit(1);
+}
 
 // ── in-memory state ────────────────────────────────────────────────
 let latestState = null;
@@ -63,6 +80,30 @@ const readBody = (req, limit = 1_000_000) =>
     req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
     req.on('error', reject);
   });
+
+// ── auth ───────────────────────────────────────────────────────────
+// Constant-time compare so the token can't be recovered by timing the
+// responses. Accepts either `Authorization: Bearer <t>` or `X-RM-Token: <t>`
+// (the second is friendlier for MQL's WebRequest header string).
+const safeEqual = (a, b) => {
+  const A = Buffer.from(String(a ?? ''));
+  const B = Buffer.from(String(b ?? ''));
+  if (A.length !== B.length) return false;
+  return crypto.timingSafeEqual(A, B);
+};
+
+const presentedToken = (req) => {
+  const auth = req.headers['authorization'];
+  if (auth && /^Bearer\s+/i.test(auth)) return auth.replace(/^Bearer\s+/i, '').trim();
+  const x = req.headers['x-rm-token'];
+  return typeof x === 'string' ? x.trim() : '';
+};
+
+/** @returns {boolean} true when the request may proceed */
+const authorised = (req) => {
+  if (!RM_TOKEN) return true;             // loopback-only dev mode (enforced at startup)
+  return safeEqual(presentedToken(req), RM_TOKEN);
+};
 
 const appendJournal = (entry) => {
   try {
@@ -102,6 +143,22 @@ const server = http.createServer(async (req, res) => {
   const p = url.pathname;
 
   try {
+    // ---- health: intentionally public so platform health checks work.
+    // Leaks nothing beyond "a server is up" and the contract version.
+    if (p === '/api/health') {
+      return send(res, 200, {
+        ok: true,
+        contractVersion: CONTRACT_VERSION,
+        authRequired: Boolean(RM_TOKEN),
+        uptimeSec: Math.round(process.uptime()),
+      });
+    }
+
+    // ---- everything else under /api requires the shared secret ----
+    if (p.startsWith('/api/') && !authorised(req)) {
+      return send(res, 401, { error: 'unauthorised' });
+    }
+
     // ---- EA → server: state snapshot -----------------------------
     if (p === '/api/state' && req.method === 'POST') {
       const raw = await readBody(req);
@@ -183,11 +240,6 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, { ok: true });
     }
 
-    // ---- health --------------------------------------------------
-    if (p === '/api/health') {
-      return send(res, 200, { ok: true, contractVersion: CONTRACT_VERSION, uptimeSec: Math.round(process.uptime()) });
-    }
-
     if (req.method === 'GET') return serveStatic(res, p);
     return send(res, 405, { error: 'method not allowed' });
   } catch (err) {
@@ -199,8 +251,16 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, HOST, () => {
   console.log(`RiskManager bridge  →  http://${HOST}:${PORT}`);
   console.log(`contract version    →  ${CONTRACT_VERSION}`);
+  console.log(`data dir            →  ${DATA_DIR}`);
+  console.log(`auth                →  ${RM_TOKEN ? 'ON (RM_TOKEN set)' : 'OFF — loopback only'}`);
+  if (!RM_TOKEN) {
+    console.log('');
+    console.log('  Running without auth. Safe here because the socket is bound to');
+    console.log('  loopback, but set RM_TOKEN before exposing this anywhere.');
+  }
   console.log('');
   console.log('In MetaTrader set:');
-  console.log(`  InpBridgeURL = http://${HOST}:${PORT}`);
+  console.log(`  InpBridgeURL   = http://${HOST}:${PORT}`);
+  if (RM_TOKEN) console.log('  InpBridgeToken = <your RM_TOKEN>');
   console.log(`  Tools > Options > Expert Advisors > Allow WebRequest for: http://${HOST}:${PORT}`);
 });

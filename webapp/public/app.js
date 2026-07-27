@@ -14,6 +14,34 @@ const { BUCKETS, PLAN_DEFAULTS, evaluateSession, evaluatePattern } = window.RMPl
 let plan = { ...PLAN_DEFAULTS };
 let lastState = null;
 
+// ── auth ────────────────────────────────────────────────────────────
+// The server guards /api/* with a shared secret (RM_TOKEN). We keep it in
+// localStorage so it's entered once per browser, and re-prompt on any 401.
+const TOKEN_KEY = 'rm_token';
+let token = localStorage.getItem(TOKEN_KEY) ?? '';
+
+function promptForToken(message) {
+  const t = window.prompt(message ?? 'Bridge token (RM_TOKEN on the server):', '');
+  if (t === null) return false;
+  token = t.trim();
+  localStorage.setItem(TOKEN_KEY, token);
+  return true;
+}
+
+/** fetch wrapper that attaches the token and recovers from a 401 once */
+async function api(path, opts = {}, retry = true) {
+  const headers = { ...(opts.headers ?? {}) };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const res = await fetch(path, { ...opts, headers });
+  if (res.status === 401) {
+    if (retry && promptForToken('Bridge rejected the token. Enter the server\'s RM_TOKEN:')) {
+      return api(path, opts, false);
+    }
+    throw new Error('unauthorised');
+  }
+  return res;
+}
+
 const TREND = { 1: ['BULLISH', 'up'], 2: ['BEARISH', 'down'] };
 const FLOW  = { 1: ['UP ▲', 'up'],    2: ['DOWN ▼', 'down'] };
 const CANDLESTATE = {
@@ -126,7 +154,7 @@ function formToPlan() {
 }
 
 async function savePlan(msg) {
-  await fetch('/api/plan', {
+  await api('/api/plan', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(plan),
@@ -210,7 +238,7 @@ async function queueArm(p) {
     return;
   }
   if (!confirm(`Queue ARM for ${p.label} (${p.type})?\n\nThis tells the EA to draw the entry/SL/TP lines.\nIt does NOT send an order.`)) return;
-  const r = await fetch('/api/commands', {
+  const r = await api('/api/commands', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action: 'arm', params: { button: p.id } }),
@@ -335,7 +363,7 @@ function render(payload) {
 
 async function poll() {
   try {
-    const payload = await fetch('/api/state').then((r) => r.json());
+    const payload = await api('/api/state').then((r) => r.json());
     lastState = payload.state;
     render(payload);
   } catch {
@@ -346,7 +374,7 @@ async function poll() {
 
 async function boot() {
   try {
-    const { plan: saved } = await fetch('/api/plan').then((r) => r.json());
+    const { plan: saved } = await api('/api/plan').then((r) => r.json());
     if (saved) plan = { ...PLAN_DEFAULTS, ...saved };
   } catch { /* no saved plan yet */ }
   planToForm();
