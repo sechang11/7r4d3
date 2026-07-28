@@ -1,7 +1,7 @@
 # Trading System Reference — Definitions & Entry Patterns
 
 **Source of truth:** `RiskManager.mq5` / `RiskManager.mq4` (identical logic, dual-platform).
-**Companion doc:** [FEATURES.md](FEATURES.md) documents the *UI/buttons*. This doc documents the *trading system* — the vocabulary, the math, and the entry menu.
+**Companion docs:** [FEATURES.md](FEATURES.md) documents the *UI/buttons*. [EXECUTION-FOOTPRINT.md](EXECUTION-FOOTPRINT.md) audits how mechanical the order flow looks and how to reduce that. This doc documents the *trading system* — the vocabulary, the math, and the entry menu.
 
 > **Purpose of this file.** Before a session you build a **game plan**: what you expect, which structures you'll trade, which entries you'll allow yourself. This doc is the fixed menu that plan draws from. Nothing here is discretionary — every definition below is exactly what the code computes.
 
