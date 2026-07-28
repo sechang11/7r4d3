@@ -51,6 +51,9 @@ async function api(path, opts = {}) {
     throw new Error('unauthorised');
   }
   hideAuthBar();
+  // Throw on any other failure too. Otherwise a 404/500 body flows onward as
+  // if it were real data — e.g. a JSON error blob saved as RiskManager.mq5.
+  if (!res.ok) throw new Error(`http ${res.status}`);
   return res;
 }
 
@@ -424,7 +427,19 @@ async function loadSourceMeta() {
   try {
     const { sources } = await api('/api/source').then((r) => r.json());
     srcMeta = sources;
-  } catch { return; }
+  } catch (e) {
+    // Never leave the card stuck on "checking…" with the buttons disabled —
+    // that reads as a hang when it's actually a failed request.
+    srcMeta = null;
+    const why = e.message === 'unauthorised' ? 'enter the bridge token first' : `bridge error (${e.message})`;
+    $('srcMeta5').textContent = why;
+    $('srcMeta4').textContent = why;
+    $('srcGet5').disabled = true;
+    $('srcGet4').disabled = true;
+    $('srcVerdict').className = 'pill down';
+    $('srcVerdictTxt').textContent = e.message === 'unauthorised' ? 'token required' : 'source check failed';
+    return;
+  }
 
   for (const [key, id, btn] of [['mq5', 'srcMeta5', 'srcGet5'], ['mq4', 'srcMeta4', 'srcGet4']]) {
     const m = srcMeta[key];
@@ -479,8 +494,12 @@ async function downloadSource(key) {
 $('srcGet5').onclick = () => downloadSource('mq5');
 $('srcGet4').onclick = () => downloadSource('mq4');
 
+let srcRetryAt = 0;
+
 async function poll() {
   if (authBlocked) return;          // don't hammer a server that's rejecting us
+  // A single failed metadata load must not disable the card forever.
+  if (!srcMeta && Date.now() > srcRetryAt) { srcRetryAt = Date.now() + 15000; loadSourceMeta(); }
   try {
     const payload = await api('/api/state').then((r) => r.json());
     lastState = payload.state;

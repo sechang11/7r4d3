@@ -206,11 +206,19 @@ const server = http.createServer(async (req, res) => {
     // ---- health: intentionally public so platform health checks work.
     // Leaks nothing beyond "a server is up" and the contract version.
     if (p === '/api/health') {
+      // Include source availability + version only (never content or paths):
+      // enough to diagnose a deployment that shipped without the .mq5/.mq4,
+      // without turning a public endpoint into an information leak.
+      const meta = sourceMeta();
       return send(res, 200, {
         ok: true,
         contractVersion: CONTRACT_VERSION,
         authRequired: Boolean(RM_TOKEN),
         uptimeSec: Math.round(process.uptime()),
+        sourceRoot: SRC_ROOT,
+        sources: Object.fromEntries(
+          Object.entries(meta).map(([k, v]) => [k, { available: v.available, version: v.version ?? null }])
+        ),
       });
     }
 
