@@ -15,6 +15,16 @@ $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Windows.Forms, System.Drawing
 [System.Windows.Forms.Application]::EnableVisualStyles()
 
+# The launcher runs this with the console hidden, so anything that throws
+# before ShowDialog would otherwise produce absolutely nothing on screen -
+# indistinguishable from "I double-clicked it and nothing happened".
+trap {
+  [System.Windows.Forms.MessageBox]::Show(
+    "The updater window could not start.`n`n$($_.Exception.Message)`n`n$($_.ScriptStackTrace)",
+    'RiskManager updater', 'OK', 'Error') | Out-Null
+  exit 1
+}
+
 $here   = Split-Path -Parent $MyInvocation.MyCommand.Path
 $worker = Join-Path $here 'Update-EA.ps1'
 if (-not (Test-Path $worker)) {
@@ -554,7 +564,11 @@ $cbTerminal.Add_SelectedIndexChanged({
 })
 
 $form.Add_Shown({
+  # Come to the front. Launched from Explorer while a maximised MT5 has focus,
+  # the window otherwise opens behind it and reads as "nothing happened".
+  $form.TopMost = $true
   $form.Activate()
+  $form.TopMost = $false
   Load-Terminals
   Do-Check
 })

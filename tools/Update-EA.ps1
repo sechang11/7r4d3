@@ -197,7 +197,16 @@ if (-not (Test-Path $configPath)) {
   Finish 0 @{ ok = $false; status = 'needconfig'; message = "fill in the token in $configPath"; configPath = $configPath }
 }
 
-$cfg = Get-Content $configPath -Raw | ConvertFrom-Json
+# Hand-edited configs are the norm here, and a stray single backslash in a
+# Windows path is the easy mistake. Report it as such instead of letting a raw
+# ConvertFrom-Json exception through.
+try {
+  $cfg = Get-Content $configPath -Raw | ConvertFrom-Json
+} catch {
+  Die ("$configPath is not valid JSON.`n" +
+       "  $($_.Exception.Message)`n" +
+       '  Paths need doubled backslashes: "C:\\Program Files\\..."')
+}
 
 # An explicit -TerminalDir (the GUI's picker) wins over whatever is configured,
 # without rewriting the config behind the user's back.
@@ -315,6 +324,31 @@ if (-not $NoSelfUpdate -and $all.ps1 -and $all.ps1.available) {
     }
   }
 }
+# -- companion files ------------------------------------------------
+# Self-update only ever replaces THIS file, so a newly published tool - the
+# windowed updater, say - could never reach anyone who bootstrapped from the
+# .bat. Fetch any companion that is missing or stale, which is what makes
+# "download the .bat and run it" actually deliver the whole thing.
+function Sync-Companion($key, $fileName) {
+  if (-not $all.$key -or -not $all.$key.available) { return }
+  $dest = Join-Path $here $fileName
+  $have = ''
+  if (Test-Path $dest) { $have = (Get-FileHash $dest -Algorithm SHA256).Hash.Substring(0, 12).ToLower() }
+  if ($have -eq $all.$key.sha256) { return }
+  try {
+    Invoke-WebRequest "$($cfg.bridgeUrl)/api/source/$key" -Headers $headers -OutFile $dest -TimeoutSec 60
+    Say "  $(if ($have) { 'Updated' } else { 'Installed' }) $fileName" 'Green'
+  } catch {
+    # A running GUI holds its own .ps1 open; that is not worth failing over.
+    Say "  (could not write $fileName - $($_.Exception.Message))" 'DarkGray'
+  }
+}
+if (-not $NoSelfUpdate) {
+  Sync-Companion 'guips1' 'Update-EA-GUI.ps1'
+  Sync-Companion 'guibat' 'Update-EA-GUI.bat'
+  Sync-Companion 'bat'    'Update-EA.bat'
+}
+
 if (-not $meta.available) { Die "$Platform is not available on this deployment" }
 
 Say "  Available : v$($meta.version)  $([math]::Round($meta.bytes/1KB)) KB  $($meta.sha256)"
