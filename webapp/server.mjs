@@ -141,9 +141,11 @@ const appendJournal = (entry) => {
 // (Nixpacks copies the repo), so what's served is exactly what this
 // deployment was built from.
 const SRC_ROOT = path.join(__dirname, '..');
+// key -> { rel: path within the repo, name: filename to save as }
 const SOURCES = {
-  mq5: 'RiskManager.mq5',
-  mq4: 'RiskManager.mq4',
+  mq5: { rel: 'RiskManager.mq5',     name: 'RiskManager.mq5' },
+  mq4: { rel: 'RiskManager.mq4',     name: 'RiskManager.mq4' },
+  tpl: { rel: 'templates/default.tpl', name: 'default.tpl'   },
 };
 
 // Read RM_VERSION out of the file itself rather than trusting a constant,
@@ -153,21 +155,23 @@ const parseEaVersion = (text) =>
 
 function sourceMeta() {
   const out = {};
-  for (const [key, name] of Object.entries(SOURCES)) {
-    const file = path.join(SRC_ROOT, name);
+  for (const [key, spec] of Object.entries(SOURCES)) {
+    const file = path.join(SRC_ROOT, spec.rel);
     try {
       const st = fs.statSync(file);
-      const text = fs.readFileSync(file, 'utf8');
+      const buf = fs.readFileSync(file);
+      // Templates are UTF-16LE; hash the bytes so the value is meaningful
+      // regardless of the file's encoding.
       out[key] = {
-        name,
+        name: spec.name,
         available: true,
         bytes: st.size,
         modified: st.mtime.toISOString(),
-        version: parseEaVersion(text),
-        sha256: crypto.createHash('sha256').update(text).digest('hex').slice(0, 12),
+        version: parseEaVersion(buf.toString('utf8')),
+        sha256: crypto.createHash('sha256').update(buf).digest('hex').slice(0, 12),
       };
     } catch {
-      out[key] = { name, available: false };
+      out[key] = { name: spec.name, available: false };
     }
   }
   return out;
@@ -303,22 +307,24 @@ const server = http.createServer(async (req, res) => {
       // Whitelist by key — never resolve a caller-supplied path, or this
       // becomes an arbitrary file reader for anyone holding the token.
       const key = p.slice('/api/source/'.length);
-      const name = SOURCES[key];
-      if (!name) return send(res, 404, { error: 'unknown source' });
+      const spec = SOURCES[key];
+      if (!spec) return send(res, 404, { error: 'unknown source' });
 
       let buf;
       try {
-        buf = fs.readFileSync(path.join(SRC_ROOT, name));
+        buf = fs.readFileSync(path.join(SRC_ROOT, spec.rel));
       } catch {
-        return send(res, 404, { error: `${name} is not present in this deployment` });
+        return send(res, 404, { error: `${spec.name} is not present in this deployment` });
       }
       res.writeHead(200, {
-        'Content-Type': 'text/plain; charset=utf-8',
-        'Content-Disposition': `attachment; filename="${name}"`,
+        // octet-stream, not text: templates are UTF-16 and must not be
+        // re-encoded in transit or MetaTrader will refuse to load them.
+        'Content-Type': 'application/octet-stream',
+        'Content-Disposition': `attachment; filename="${spec.name}"`,
         'Content-Length': buf.length,
         'Cache-Control': 'no-store',
       });
-      appendJournal({ type: 'source_download', file: name });
+      appendJournal({ type: 'source_download', file: spec.name });
       return res.end(buf);
     }
 

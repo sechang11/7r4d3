@@ -179,10 +179,17 @@
         <div class="desc" id="srcMeta4">—</div>
         <button class="primary" id="srcGet4" disabled>Download .mq4</button>
       </div>
+      <div class="srcFile">
+        <strong>default.tpl</strong> <span class="desc">chart template</span>
+        <div class="desc" id="srcMetaTpl">—</div>
+        <button class="primary" id="srcGetTpl" disabled>Download template</button>
+      </div>
     </div>
 
     <ol class="srcSteps">
-      <li>Download the file for your platform.</li>
+      <li>Download the file for your platform. The template goes in
+          <code>MQL5/Profiles/Templates</code> instead — apply it with
+          <em>right-click chart → Template</em>.</li>
       <li>Save it into your terminal's <code>MQL5/Experts</code> (or <code>MQL4/Experts</code>) folder,
           replacing the old one. Find it via <em>File → Open Data Folder</em>.</li>
       <li>Open it in MetaEditor and press <kbd>F7</kbd> to compile. Expect 0 errors, 0 warnings.</li>

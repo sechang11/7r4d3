@@ -35,6 +35,30 @@ token, confirm the paths, run it again.
    it**, and leaves the version marker untouched so the next run retries.
 6. On success: records version + sha in `.installed.<platform>.json`.
 
+## Chart template
+
+`Update-EA.bat` also installs `default.tpl` into `MQL5\Profiles\Templates`,
+backing up any existing one first. A fresh terminal gets the EA and the chart
+setup in a single click.
+
+### Re-sanitising the template
+
+**Never commit a template straight out of MetaTrader.** MT5 bakes the attached
+EA's *input values* into it, so a `.tpl` saved from a configured chart contains
+your Discord webhook and bridge token. `.tpl` files are also **UTF-16**, so
+`grep` silently finds nothing in them — a scan that looks clean may not be.
+
+After changing your chart setup, export it and run:
+
+```bash
+node tools/sanitize-template.mjs "<path to your .tpl>" templates/default.tpl
+```
+
+It removes every `<object>` block (session junk — trade markers, EA drawings),
+empties `<inputs>` so the EA falls back to its blank compiled defaults, and
+**refuses to write the file at all** if the result still matches any credential
+pattern. The real one went from 1,808,514 bytes / 4,508 objects to 3,040 bytes.
+
 ## Notes
 
 - **`-Force`** reinstalls even when the sha matches.

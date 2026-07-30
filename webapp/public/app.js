@@ -441,10 +441,13 @@ async function loadSourceMeta() {
     return;
   }
 
-  for (const [key, id, btn] of [['mq5', 'srcMeta5', 'srcGet5'], ['mq4', 'srcMeta4', 'srcGet4']]) {
+  for (const [key, id, btn] of [['mq5', 'srcMeta5', 'srcGet5'],
+                                ['mq4', 'srcMeta4', 'srcGet4'],
+                                ['tpl', 'srcMetaTpl', 'srcGetTpl']]) {
     const m = srcMeta[key];
     if (m?.available) {
-      $(id).textContent = `v${m.version ?? '?'} · ${kb(m.bytes)} · ${m.sha256} · ${new Date(m.modified).toLocaleDateString()}`;
+      const stamp = `${kb(m.bytes)} · ${m.sha256} · ${new Date(m.modified).toLocaleDateString()}`;
+      $(id).textContent = m.version ? `v${m.version} · ${stamp}` : stamp;
       $(btn).disabled = false;
     } else {
       $(id).textContent = 'not present in this deployment';
@@ -493,6 +496,7 @@ async function downloadSource(key) {
 
 $('srcGet5').onclick = () => downloadSource('mq5');
 $('srcGet4').onclick = () => downloadSource('mq4');
+$('srcGetTpl').onclick = () => downloadSource('tpl');
 
 let srcRetryAt = 0;
 

@@ -166,6 +166,26 @@ if ($errs -or -not $result -or $result -notmatch '0 error') {
 @{ version = $meta.version; sha256 = $meta.sha256; installed = (Get-Date -Format 'o') } |
   ConvertTo-Json | Set-Content $markerPath -Encoding UTF8
 
+# -- chart template (optional) --------------------------------------
+# Downloaded as raw bytes: .tpl is UTF-16LE and MetaTrader will reject it
+# if anything re-encodes it on the way in.
+if ($Platform -eq 'mq5') {
+  try {
+    $tplMeta = (Invoke-RestMethod "$($cfg.bridgeUrl)/api/source" -Headers $headers -TimeoutSec 20).sources.tpl
+    if ($tplMeta.available) {
+      $tplDir = Join-Path $mqlDir 'Profiles\Templates'
+      if (Test-Path $tplDir) {
+        $tplPath = Join-Path $tplDir 'default.tpl'
+        if (Test-Path $tplPath) {
+          Copy-Item $tplPath (Join-Path $backupDir "$stamp-default.tpl") -Force
+        }
+        Invoke-WebRequest "$($cfg.bridgeUrl)/api/source/tpl" -Headers $headers -OutFile $tplPath -TimeoutSec 60
+        Say "  Installed default.tpl into $tplDir" 'Green'
+      }
+    }
+  } catch { Say '  (template not installed - continuing)' 'DarkGray' }
+}
+
 Say ''
 Say "  $result" 'Green'
 Say "  Installed v$($meta.version) into $expertsDir" 'Green'
