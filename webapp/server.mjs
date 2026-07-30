@@ -191,6 +191,8 @@ const SOURCES = {
   // a newer one is published.
   bat: { rel: 'tools/Update-EA.bat',   name: 'Update-EA.bat'   },
   ps1: { rel: 'tools/Update-EA.ps1',   name: 'Update-EA.ps1'   },
+  guibat: { rel: 'tools/Update-EA-GUI.bat', name: 'Update-EA-GUI.bat' },
+  guips1: { rel: 'tools/Update-EA-GUI.ps1', name: 'Update-EA-GUI.ps1' },
 };
 
 // Read RM_VERSION out of the file itself rather than trusting a constant,

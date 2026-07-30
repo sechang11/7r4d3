@@ -11,12 +11,22 @@
           Options:
             -Platform mq4     update the MT4 build instead
             -Force            reinstall even if already up to date
+
+  Update-EA-GUI.ps1 drives this script with -NonInteractive, which suppresses
+  every prompt and appends a single machine-readable ##RESULT## line so the
+  window can report exactly what happened. -CheckOnly stops before any change.
 #>
 
 param(
   [ValidateSet('mq5', 'mq4')] [string] $Platform = 'mq5',
   [switch] $Force,
-  [switch] $NoSelfUpdate   # set internally after a self-update, to stop recursion
+  [switch] $NoSelfUpdate,      # set internally after a self-update, to stop recursion
+  [switch] $NonInteractive,    # never prompt; emit ##RESULT## json instead
+  [switch] $CheckOnly,         # report versions and live state, change nothing
+  [switch] $Yes,               # pre-answer the open-position confirmation
+  [string] $TerminalDir = '',  # override the configured terminal data folder
+  [switch] $ListTerminals,     # enumerate installations and exit
+  [string] $SetNickname = ''   # name the -TerminalDir installation and exit
 )
 
 $ErrorActionPreference = 'Stop'
@@ -25,7 +35,21 @@ $configPath = Join-Path $here 'updater.config.json'
 $markerPath = Join-Path $here ".installed.$Platform.json"
 
 function Say($msg, $colour = 'Gray') { Write-Host $msg -ForegroundColor $colour }
-function Die($msg) { Say ''; Say "  FAILED: $msg" 'Red'; Say ''; Read-Host 'Press Enter to close'; exit 1 }
+
+# Every exit routes through here, so the GUI always learns the outcome — the
+# whole point of the rewrite was that a silent console left you guessing.
+function Finish($code, $obj) {
+  if ($NonInteractive) {
+    Write-Host ('##RESULT##' + ($obj | ConvertTo-Json -Compress -Depth 6))
+  } else {
+    Read-Host 'Press Enter to close'
+  }
+  exit $code
+}
+function Die($msg) {
+  Say ''; Say "  FAILED: $msg" 'Red'; Say ''
+  Finish 1 @{ ok = $false; status = 'failed'; message = $msg }
+}
 
 Say ''
 Say '  RiskManager EA updater' 'Cyan'
@@ -37,9 +61,38 @@ function Find-MetaEditor {
     -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
 }
 function Find-DataDirs {
+  # Accept MQL4-only installs too: an MT4 terminal has no MQL5 folder, and
+  # excluding it made the MT4 build unreachable from the picker.
   Get-ChildItem "$env:APPDATA\MetaQuotes\Terminal" -Directory -ErrorAction SilentlyContinue |
-    Where-Object { Test-Path (Join-Path $_.FullName 'MQL5\Experts') } |
+    Where-Object {
+      (Test-Path (Join-Path $_.FullName 'MQL5\Experts')) -or
+      (Test-Path (Join-Path $_.FullName 'MQL4\Experts'))
+    } |
     Select-Object -ExpandProperty FullName
+}
+
+# Nicknames are stored against the data-folder path, which is stable for the
+# life of an installation - so a name given once stays attached to that
+# terminal. Without them the picker shows only hashes and install paths, which
+# is unreadable once you run several MT5 copies.
+function Get-Nicknames {
+  if (-not (Test-Path $configPath)) { return @{} }
+  $c = Get-Content $configPath -Raw | ConvertFrom-Json
+  $map = @{}
+  if ($c.PSObject.Properties.Name -contains 'terminals' -and $c.terminals) {
+    foreach ($prop in $c.terminals.PSObject.Properties) { $map[$prop.Name] = $prop.Value }
+  }
+  return $map
+}
+
+function Set-Nickname($dir, $name) {
+  $c = Get-Content $configPath -Raw | ConvertFrom-Json
+  if ($c.PSObject.Properties.Name -notcontains 'terminals' -or -not $c.terminals) {
+    $c | Add-Member -NotePropertyName terminals -NotePropertyValue (New-Object psobject) -Force
+  }
+  if ($c.terminals.PSObject.Properties.Name -contains $dir) { $c.terminals.$dir = $name }
+  else { $c.terminals | Add-Member -NotePropertyName $dir -NotePropertyValue $name -Force }
+  $c | ConvertTo-Json -Depth 6 | Set-Content $configPath -Encoding UTF8
 }
 
 # MetaTrader names each installation's data folder after a hash of its install
@@ -51,24 +104,62 @@ function Get-TerminalLabel($dir) {
   $install = if (Test-Path $origin) {
     ((Get-Content $origin -Encoding Unicode -ErrorAction SilentlyContinue) -join '').Trim()
   } else { '' }
-  $has = Test-Path (Join-Path $dir 'MQL5\Experts\RiskManager.ex5')
+  $has = (Test-Path (Join-Path $dir 'MQL5\Experts\RiskManager.ex5')) -or
+         (Test-Path (Join-Path $dir 'MQL4\Experts\RiskManager.ex4'))
+  $nick = (Get-Nicknames)[$dir]
   [pscustomobject]@{
     Dir       = $dir
     Install   = $(if ($install) { $install } else { '(install path unknown)' })
+    Nickname  = $(if ($nick) { $nick } else { '' })
     HasEa     = $has
+    HasMq5    = (Test-Path (Join-Path $dir 'MQL5\Experts'))
+    HasMq4    = (Test-Path (Join-Path $dir 'MQL4\Experts'))
     Short     = (Split-Path $dir -Leaf).Substring(0, 8)
   }
+}
+
+# Both of these run before the config checks, so the GUI can populate its
+# terminal list on a machine that has never been configured.
+if ($ListTerminals) {
+  $items = @(Find-DataDirs | ForEach-Object { Get-TerminalLabel $_ })
+  Finish 0 @{
+    ok = $true; status = 'terminals'
+    terminals = @($items | ForEach-Object {
+      @{ dir = $_.Dir; install = $_.Install; nickname = $_.Nickname
+         hasEa = $_.HasEa; hasMq5 = $_.HasMq5; hasMq4 = $_.HasMq4 }
+    })
+  }
+}
+
+if ($SetNickname) {
+  if (-not $TerminalDir) { Die '-SetNickname needs -TerminalDir' }
+  if (-not (Test-Path $configPath)) { Die "no config yet - run a check first ($configPath)" }
+  Set-Nickname $TerminalDir $SetNickname
+  Say "  Named $TerminalDir -> $SetNickname" 'Green'
+  Finish 0 @{ ok = $true; status = 'named'; dir = $TerminalDir; nickname = $SetNickname }
 }
 
 # Ask which terminal to target when more than one is present, rather than
 # guessing or making the user hand-edit a hash into JSON.
 function Select-TerminalDir($dirs) {
   $items = @($dirs | ForEach-Object { Get-TerminalLabel $_ })
+  # The GUI presents its own picker, so never block on a console prompt there.
+  if ($NonInteractive) {
+    Finish 2 @{
+      ok = $false; status = 'needterminal'
+      message = 'more than one MetaTrader installation — choose one'
+      terminals = @($items | ForEach-Object {
+        @{ dir = $_.Dir; install = $_.Install; nickname = $_.Nickname
+           hasEa = $_.HasEa; hasMq5 = $_.HasMq5; hasMq4 = $_.HasMq4 }
+      })
+    }
+  }
   Say ''
   Say '  Multiple MetaTrader installations found:' 'Yellow'
   for ($i = 0; $i -lt $items.Count; $i++) {
     $m = $items[$i]
-    Say ("    [{0}] {1}" -f ($i + 1), $m.Install) 'White'
+    $name = $(if ($m.Nickname) { "$($m.Nickname)  -  $($m.Install)" } else { $m.Install })
+    Say ("    [{0}] {1}" -f ($i + 1), $name) 'White'
     Say ("        {0}...  {1}" -f $m.Short, $(if ($m.HasEa) { 'RiskManager already installed' } else { 'no RiskManager yet' })) 'DarkGray'
   }
   Say ''
@@ -103,10 +194,17 @@ if (-not (Test-Path $configPath)) {
     $dataDirs | ForEach-Object { Say "    $_" }
   }
   Say ''
-  Read-Host 'Press Enter to close'; exit 0
+  Finish 0 @{ ok = $false; status = 'needconfig'; message = "fill in the token in $configPath"; configPath = $configPath }
 }
 
 $cfg = Get-Content $configPath -Raw | ConvertFrom-Json
+
+# An explicit -TerminalDir (the GUI's picker) wins over whatever is configured,
+# without rewriting the config behind the user's back.
+if ($TerminalDir) {
+  if (-not (Test-Path $TerminalDir)) { Die "terminal data folder not found: $TerminalDir" }
+  $cfg.terminalDataDir = $TerminalDir
+}
 
 # A config downloaded from the dashboard arrives with the token filled in but
 # the machine-specific paths blank. Detect them here and write them back, so
@@ -154,7 +252,16 @@ if (-not (Test-Path $cfg.terminalDataDir))  { Die "Terminal data folder not foun
 
 $mqlDir     = Join-Path $cfg.terminalDataDir ($(if ($Platform -eq 'mq5') { 'MQL5' } else { 'MQL4' }))
 $expertsDir = Join-Path $mqlDir 'Experts'
-if (-not (Test-Path $expertsDir)) { Die "Experts folder not found at $expertsDir" }
+if (-not (Test-Path $expertsDir)) {
+  $other = $(if ($Platform -eq 'mq5') { 'MQL4' } else { 'MQL5' })
+  $hasOther = Test-Path (Join-Path $cfg.terminalDataDir "$other\Experts")
+  $hint = $(if ($hasOther) {
+    "This terminal is a $other installation - switch the platform selector."
+  } else {
+    "Neither MQL4 nor MQL5 was found here; is terminalDataDir pointing at a MetaTrader data folder?"
+  })
+  Die "no $(if ($Platform -eq 'mq5') { 'MQL5' } else { 'MQL4' })\Experts folder in`n  $($cfg.terminalDataDir)`n  $hint"
+}
 
 $headers  = @{ Authorization = "Bearer $($cfg.token)" }
 $srcFile  = Join-Path $expertsDir "RiskManager.$Platform"
@@ -195,7 +302,15 @@ if (-not $NoSelfUpdate -and $all.ps1 -and $all.ps1.available) {
       Copy-Item $tmpPs $me -Force
       Remove-Item $tmpPs -Force
       Say '  Updated. Re-running the new version...' 'Green'
-      & powershell -NoProfile -ExecutionPolicy Bypass -File $me -Platform $Platform -NoSelfUpdate @(if ($Force) { '-Force' })
+      # Forward every switch, or a GUI-driven run silently loses its
+      # non-interactive contract the moment the updater updates itself.
+      $fwd = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $me, '-Platform', $Platform, '-NoSelfUpdate')
+      if ($Force)          { $fwd += '-Force' }
+      if ($NonInteractive) { $fwd += '-NonInteractive' }
+      if ($CheckOnly)      { $fwd += '-CheckOnly' }
+      if ($Yes)            { $fwd += '-Yes' }
+      if ($TerminalDir)    { $fwd += @('-TerminalDir', $TerminalDir) }
+      & powershell @fwd
       exit $LASTEXITCODE
     }
   }
@@ -207,30 +322,75 @@ Say "  Available : v$($meta.version)  $([math]::Round($meta.bytes/1KB)) KB  $($m
 $installed = if (Test-Path $markerPath) { Get-Content $markerPath -Raw | ConvertFrom-Json } else { $null }
 if ($installed) { Say "  Installed : v$($installed.version)  $($installed.sha256)" }
 
-if ($installed -and $installed.sha256 -eq $meta.sha256 -and -not $Force) {
-  Say ''
-  Say '  Already up to date.' 'Green'
-  Say ''
-  Read-Host 'Press Enter to close'; exit 0
-}
+$upToDate = ($installed -and $installed.sha256 -eq $meta.sha256)
 
 # -- pre-flight warning ---------------------------------------------
 # Compiling reloads the EA. On-chart state now survives that (OnDeinit
 # persists it), but an open position is still worth knowing about.
+# With many instances on one account, sum across every symbol posting.
+$open = 0; $mtx = 0; $armedCount = 0; $liveKnown = $false
 try {
-  $st = (Invoke-RestMethod "$($cfg.bridgeUrl)/api/state" -Headers $headers -TimeoutSec 10).state
-  if ($st) {
-    $open = [int]$st.exposure.openCount
-    $mtx  = [int]$st.matrices.active
-    if ($open -gt 0 -or $mtx -gt 0 -or $st.armed.active) {
-      Say ''
-      Say "  NOTE: EA currently has $open open position(s), $mtx active matrix/matrices$(if ($st.armed.active) { ', an armed setup' })." 'Yellow'
-      Say '  Compiling reloads the EA. Lines and matrices are restored automatically,' 'Yellow'
-      Say '  but nothing protective runs during the brief reload.' 'Yellow'
-      if ((Read-Host '  Continue? (y/N)') -ne 'y') { Say '  Cancelled.'; exit 0 }
-    }
+  $snap = Invoke-RestMethod "$($cfg.bridgeUrl)/api/state" -Headers $headers -TimeoutSec 10
+  $rows = @($snap.instances)
+  if ($rows.Count -gt 0) {
+    $liveKnown = $true
+    foreach ($r in $rows) { if (-not $r.stale) { $open += [int]$r.openCount } }
+    if ($snap.state) { $mtx = [int]$snap.state.matrices.active }
+    $armedCount = @($rows | Where-Object { $_.armed }).Count
+  } elseif ($snap.state) {
+    $liveKnown = $true
+    $open = [int]$snap.state.exposure.openCount
+    $mtx  = [int]$snap.state.matrices.active
+    if ($snap.state.armed.active) { $armedCount = 1 }
   }
 } catch { Say '  (could not read live state - continuing)' 'DarkGray' }
+
+if ($CheckOnly) {
+  Finish 0 @{
+    ok = $true; status = $(if ($upToDate) { 'uptodate' } else { 'outdated' })
+    installedVersion = $(if ($installed) { $installed.version } else { $null })
+    installedSha     = $(if ($installed) { $installed.sha256 } else { $null })
+    availableVersion = $meta.version
+    availableSha     = $meta.sha256
+    bytes            = $meta.bytes
+    expertsDir       = $expertsDir
+    bridgeUrl        = $cfg.bridgeUrl
+    metaEditor       = $cfg.metaEditorPath
+    terminalDir      = $cfg.terminalDataDir
+    terminalNickname = (Get-TerminalLabel $cfg.terminalDataDir).Nickname
+    terminalInstall  = (Get-TerminalLabel $cfg.terminalDataDir).Install
+    liveKnown        = $liveKnown
+    openCount        = $open
+    matrices         = $mtx
+    armedCount       = $armedCount
+  }
+}
+
+if ($upToDate -and -not $Force) {
+  Say ''
+  Say '  Already up to date.' 'Green'
+  Say ''
+  Finish 0 @{ ok = $true; status = 'uptodate'; version = $meta.version; expertsDir = $expertsDir }
+}
+
+if ($open -gt 0 -or $mtx -gt 0 -or $armedCount -gt 0) {
+  Say ''
+  Say "  NOTE: $open open position(s), $mtx active matrix/matrices, $armedCount armed setup(s)." 'Yellow'
+  Say '  Compiling reloads the EA. Lines and matrices are restored automatically,' 'Yellow'
+  Say '  but nothing protective runs during the brief reload.' 'Yellow'
+  if (-not $Yes) {
+    if ($NonInteractive) {
+      Finish 3 @{
+        ok = $false; status = 'confirm'; openCount = $open; matrices = $mtx; armedCount = $armedCount
+        message = "$open open position(s), $mtx matrix/matrices and $armedCount armed setup(s) are live."
+      }
+    }
+    if ((Read-Host '  Continue? (y/N)') -ne 'y') {
+      Say '  Cancelled.'
+      Finish 0 @{ ok = $false; status = 'cancelled' }
+    }
+  }
+}
 
 # -- backup ---------------------------------------------------------
 $backupDir = Join-Path $here 'backup'
@@ -278,7 +438,13 @@ if ($errs -or -not $result -or $result -notmatch '0 error') {
   } else {
     Say '  No backup to restore from.' 'Red'
   }
-  Say ''; Read-Host 'Press Enter to close'; exit 1
+  Say ''
+  Finish 1 @{
+    ok = $false; status = 'compilefailed'
+    rolledBack = [bool]$prev
+    errors = @($errs | Select-Object -First 10 | ForEach-Object { "$_" })
+    message = 'compile failed'
+  }
 }
 
 @{ version = $meta.version; sha256 = $meta.sha256; installed = (Get-Date -Format 'o') } |
@@ -311,4 +477,11 @@ Say ''
 Say '  MT5 reloads a recompiled EA automatically. If the chart still shows the' 'Gray'
 Say '  old build, remove the EA and drag it back on.' 'Gray'
 Say ''
-Read-Host 'Press Enter to close'
+Finish 0 @{
+  ok = $true; status = 'updated'
+  version = $meta.version; sha256 = $meta.sha256
+  previousVersion = $(if ($installed) { $installed.version } else { $null })
+  expertsDir = $expertsDir
+  compile = "$result"
+  binary = $(if (Test-Path $exFile) { (Get-Item $exFile).LastWriteTime.ToString('o') } else { $null })
+}
