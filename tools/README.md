@@ -14,7 +14,7 @@ token, confirm the paths, run it again.
 
 ```json
 {
-  "bridgeUrl":       "https://7r4d3-production.up.railway.app",
+  "bridgeUrl":       "https://7r4d3.up.railway.app",
   "token":           "<your RM_TOKEN>",
   "metaEditorPath":  "C:\\Program Files\\MetaTrader 5\\MetaEditor64.exe",
   "terminalDataDir": "C:\\Users\\you\\AppData\\Roaming\\MetaQuotes\\Terminal\\<hash>"
