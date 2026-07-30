@@ -179,6 +179,27 @@ button.ghost:hover { color: #fff; }
 }
 .lock.hard { background: var(--sell); color: #fff; }
 
+/* ── instance strip ─────────────────────────────────────── */
+.instBar {
+  background: var(--section); border: 1px solid var(--border);
+  border-radius: 6px; padding: 12px 15px; margin-bottom: 14px;
+}
+.instAcct {
+  color: var(--dim); font-size: 11px; letter-spacing: .8px;
+  text-transform: uppercase; margin: 6px 0 6px; font-weight: 600;
+}
+.instStrip { display: flex; flex-wrap: wrap; gap: 8px; }
+.inst {
+  min-width: 128px; padding: 8px 11px; border-radius: 5px; cursor: pointer;
+  border: 1px solid var(--border); background: var(--plc); transition: .12s;
+}
+.inst:hover  { border-color: var(--dim); transform: translateY(-1px); }
+.inst.sel    { border-color: var(--gold); background: var(--section); box-shadow: 0 0 0 1px var(--gold) inset; }
+.inst.stale  { opacity: .5; }
+.inst.clash  { border-color: var(--sell); }
+.instSym  { font-weight: 700; font-size: 14px; letter-spacing: .6px; }
+.instMeta { font-size: 11px; font-variant-numeric: tabular-nums; margin-top: 2px; }
+
 /* ── EA source card ─────────────────────────────────────── */
 .srcRow {
   display: grid; gap: 12px;

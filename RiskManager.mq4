@@ -239,7 +239,7 @@ input string InpDiscordWebhook = "";  // Discord Webhook URL
 //--- Web bridge (state export to the companion web app) -------------
 // RM_VERSION is stamped into every state POST so the web app can detect
 // a stale EA and refuse to present its data as live.
-#define RM_VERSION "6.01"
+#define RM_VERSION "6.02"
 
 input string InpBridgeURL    = "";   // Web bridge base URL, blank = OFF (e.g. http://127.0.0.1:8787)
 input string InpBridgeToken  = "";   // Bridge shared secret (must match RM_TOKEN on the server)
@@ -9274,6 +9274,7 @@ string BuildStateJson()
    j += "\"spoken\":\"" + SpokenSymbol() + "\",";
    j += "\"digits\":" + IntegerToString(dg) + ",";
    j += "\"chartTf\":" + IntegerToString((int)Period()) + ",";
+   j += "\"chartId\":" + IntegerToString((long)ChartID()) + ",";
 
    j += "\"price\":{\"bid\":" + JNum(bid,dg) + ",\"ask\":" + JNum(ask,dg) + "},";
 
@@ -9337,6 +9338,9 @@ string BuildStateJson()
 
    // ── account + exposure ──
    j += "\"account\":{";
+   j += "\"login\":"    + IntegerToString(AccountInfoInteger(ACCOUNT_LOGIN)) + ",";
+   j += "\"server\":\"" + AccountInfoString(ACCOUNT_SERVER) + "\",";
+   j += "\"currency\":\"" + AccountInfoString(ACCOUNT_CURRENCY) + "\",";
    j += "\"balance\":"  + JNum(AccountInfoDouble(ACCOUNT_BALANCE),2) + ",";
    j += "\"equity\":"   + JNum(AccountInfoDouble(ACCOUNT_EQUITY),2) + ",";
    j += "\"pnlSymbol\":"+ JNum(GetSymbolPnL(),2) + ",";
@@ -9544,7 +9548,11 @@ void PollCommands()
 
    char post[], result[];
    string rh;
-   int res = WebRequest("GET", InpBridgeURL + "/api/commands/next", BridgeHeaders(), 1000,
+   // Identify ourselves: the queue only hands a command to the instance it was
+   // addressed to, so ten EAs polling one bridge can't steal each other's orders.
+   string qs = "?login=" + IntegerToString(AccountInfoInteger(ACCOUNT_LOGIN)) +
+               "&symbol=" + _Symbol;
+   int res = WebRequest("GET", InpBridgeURL + "/api/commands/next" + qs, BridgeHeaders(), 1000,
                         post, result, rh);
    if(res != 200) return;
 

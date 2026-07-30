@@ -35,7 +35,7 @@ const HOST = process.env.HOST ?? (ON_PAAS ? '0.0.0.0' : '127.0.0.1');
 
 // Contract version this server was built against. Compared to the EA's
 // RM_VERSION on every snapshot so a stale EA can't masquerade as live.
-const CONTRACT_VERSION = '6.01';
+const CONTRACT_VERSION = '6.02';
 
 // Shared secret guarding every /api/* route. Set RM_TOKEN in the environment
 // (never in source). Both the EA and the browser must present it.
@@ -70,8 +70,48 @@ if (!RM_TOKEN && !isLoopback) {
 }
 
 // ── in-memory state ────────────────────────────────────────────────
-let latestState = null;
-let lastStateAt = 0;
+// One entry per live EA, keyed `<login>:<symbol>`. A terminal maps to exactly
+// one trading account and a chart to one symbol, so that pair identifies an
+// instance — see MULTI-INSTANCE.md. A single slot here would let ten EAs
+// overwrite each other, which is what made the plan's caps meaningless.
+/** @type {Map<string,{state:object,at:number,chartId:number|null,collision:object|null}>} */
+const instances = new Map();
+
+const instanceKey = (s) => `${s?.account?.login ?? '?'}:${s?.symbol ?? '?'}`;
+
+/** Freshest instance, used when the caller doesn't name one. */
+const freshestKey = () => {
+  let best = null, bestAt = -1;
+  for (const [k, e] of instances) if (e.at > bestAt) { best = k; bestAt = e.at; }
+  return best;
+};
+
+/** Compact per-instance row for the dashboard's selector. */
+const summarise = (key, e) => {
+  const s = e.state, age = Date.now() - e.at;
+  const pats = Array.isArray(s?.patterns) ? s.patterns : [];
+  return {
+    key,
+    login:      s?.account?.login   ?? null,
+    server:     s?.account?.server  ?? null,
+    symbol:     s?.symbol           ?? null,
+    spoken:     s?.spoken           ?? s?.symbol ?? null,
+    eaVersion:  s?.v                ?? null,
+    versionMatch: s?.v === CONTRACT_VERSION,
+    ageMs:      age,
+    stale:      age >= STALE_MS,
+    price:      s?.price            ?? null,
+    digits:     s?.digits           ?? 5,
+    trend:      s?.m15?.trend       ?? null,
+    h4Trend:    s?.h4?.trend        ?? null,
+    drangePct:  s?.m15?.drangePct   ?? null,
+    pnlSymbol:  s?.account?.pnlSymbol ?? null,
+    openCount:  s?.exposure?.openCount ?? 0,
+    armed:      s?.armed?.active ? (s.armed.button ?? true) : null,
+    available:  pats.filter((v) => v?.available).length,
+    collision:  e.collision,
+  };
+};
 
 /** @type {{id:number,ts:number,action:string,params:object,status:string,result:string|null}[]} */
 const commands = [];
@@ -246,30 +286,63 @@ const server = http.createServer(async (req, res) => {
         console.error('bad state JSON:', raw.slice(0, 300));
         return send(res, 400, { error: 'invalid json' });
       }
-      latestState = parsed;
-      lastStateAt = Date.now();
-      return send(res, 200, { ok: true });
+      const key  = instanceKey(parsed);
+      const now  = Date.now();
+      const prev = instances.get(key);
+      const cid  = parsed?.chartId ?? null;
+
+      // Two charts of the same symbol on the same account are fighting for one
+      // slot. Surface it rather than let them silently overwrite each other.
+      let collision = prev?.collision ?? null;
+      if (prev && cid !== null && prev.chartId !== null && prev.chartId !== cid) {
+        if (now - prev.at < STALE_MS) {
+          collision = { chartIds: [prev.chartId, cid], since: collision?.since ?? now };
+          console.warn(`state collision on ${key}: charts ${prev.chartId} and ${cid}`);
+        }
+      } else if (collision && now - (prev?.at ?? 0) >= STALE_MS) {
+        collision = null;   // the other chart went away
+      }
+
+      instances.set(key, { state: parsed, at: now, chartId: cid, collision });
+      return send(res, 200, { ok: true, key });
     }
 
     // ---- web app → server: read state ----------------------------
+    // Returns every live instance for the selector, plus the full state of the
+    // one being viewed (`?key=`, defaulting to whichever posted most recently).
     if (p === '/api/state' && req.method === 'GET') {
-      const age = latestState ? Date.now() - lastStateAt : null;
+      const rows = [...instances].map(([k, e]) => summarise(k, e))
+        .sort((a, b) => String(a.symbol).localeCompare(String(b.symbol)));
+
+      const want = url.searchParams.get('key');
+      const key  = (want && instances.has(want)) ? want : freshestKey();
+      const e    = key ? instances.get(key) : null;
+      const age  = e ? Date.now() - e.at : null;
+
       return send(res, 200, {
-        connected: latestState !== null && age < STALE_MS,
-        stale: latestState !== null && age >= STALE_MS,
-        ageMs: age,
         contractVersion: CONTRACT_VERSION,
-        eaVersion: latestState?.v ?? null,
-        versionMatch: latestState ? latestState.v === CONTRACT_VERSION : null,
-        state: latestState,
+        instances: rows,
+        key,
+        keyMissing: Boolean(want) && !instances.has(want),
+        connected: e !== null && age < STALE_MS,
+        stale:     e !== null && age >= STALE_MS,
+        ageMs:     age,
+        eaVersion: e?.state?.v ?? null,
+        versionMatch: e ? e.state.v === CONTRACT_VERSION : null,
+        collision: e?.collision ?? null,
+        state: e?.state ?? null,
       });
     }
 
     // ---- EA polls for the next command ---------------------------
     // Dispatches at most one pending command, and marks it dispatched so a
     // repeated poll (or a retry) can never fire the same order twice.
+    // Commands are addressed to one instance. An untargeted command is never
+    // dispatched — with ten EAs polling, "whoever asks first" would fire an
+    // order on an arbitrary symbol.
     if (p === '/api/commands/next' && req.method === 'GET') {
-      const next = commands.find((c) => c.status === 'pending');
+      const me = `${url.searchParams.get('login') ?? '?'}:${url.searchParams.get('symbol') ?? '?'}`;
+      const next = commands.find((c) => c.status === 'pending' && c.target === me);
       if (!next) return send(res, 200, { command: null });
       next.status = 'dispatched';
       next.dispatchedAt = Date.now();
@@ -285,17 +358,23 @@ const server = http.createServer(async (req, res) => {
       cmd.status = ok ? 'done' : 'failed';
       cmd.result = result ?? null;
       cmd.ackedAt = Date.now();
-      appendJournal({ type: 'command_ack', id: cmd.id, action: cmd.action, ok, result, state: latestState });
+      appendJournal({
+        type: 'command_ack', id: cmd.id, action: cmd.action, ok, result,
+        target: cmd.target, state: instances.get(cmd.target)?.state ?? null,
+      });
       return send(res, 200, { ok: true });
     }
 
     // ---- web app enqueues a command ------------------------------
     if (p === '/api/commands' && req.method === 'POST') {
-      const { action, params } = JSON.parse(await readBody(req));
+      const { action, params, target } = JSON.parse(await readBody(req));
       if (typeof action !== 'string' || !action) return send(res, 400, { error: 'action required' });
-      const cmd = { id: ++cmdSeq, ts: Date.now(), action, params: params ?? {}, status: 'pending', result: null };
+      if (typeof target !== 'string' || !instances.has(target)) {
+        return send(res, 400, { error: 'target must name a live instance' });
+      }
+      const cmd = { id: ++cmdSeq, ts: Date.now(), target, action, params: params ?? {}, status: 'pending', result: null };
       commands.push(cmd);
-      appendJournal({ type: 'command_queued', id: cmd.id, action, params });
+      appendJournal({ type: 'command_queued', id: cmd.id, target, action, params });
       return send(res, 200, { ok: true, id: cmd.id });
     }
 

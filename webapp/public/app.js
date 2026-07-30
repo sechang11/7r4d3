@@ -18,6 +18,12 @@ const { BUCKETS, PLAN_DEFAULTS, evaluateSession, evaluatePattern } = window.RMPl
 let plan = { ...PLAN_DEFAULTS };
 let lastState = null;
 
+// Which EA the detail view is showing. One EA per (account, symbol); the server
+// keys them the same way. Remembered so a reload returns to the same chart.
+const INST_KEY = 'rm_instance';
+let selectedKey = localStorage.getItem(INST_KEY) ?? null;
+let liveKey = null;               // what the server actually served us
+
 // ── auth ────────────────────────────────────────────────────────────
 // The server guards /api/* with a shared secret (RM_TOKEN). We keep it in
 // localStorage so it's entered once per browser, and re-prompt on any 401.
@@ -285,13 +291,17 @@ async function queueArm(p) {
     $('armNote').textContent = 'remote disarmed — press ARM REMOTE first';
     return;
   }
-  if (!confirm(`Queue ARM for ${p.label} (${p.type})?\n\nThis tells the EA to draw the entry/SL/TP lines.\nIt does NOT send an order.`)) return;
+  // Address the command at one instance. The queue refuses untargeted commands
+  // precisely so a click can't land on whichever of ten EAs polls first.
+  if (!liveKey) { $('armNote').textContent = 'no instance selected'; return; }
+  const sym = lastState?.symbol ?? liveKey;
+  if (!confirm(`Queue ARM for ${p.label} (${p.type}) on ${sym}?\n\nThis tells the EA to draw the entry/SL/TP lines.\nIt does NOT send an order.`)) return;
   const r = await api('/api/commands', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'arm', params: { button: p.id } }),
+    body: JSON.stringify({ action: 'arm', target: liveKey, params: { button: p.id } }),
   }).then((x) => x.json());
-  $('armNote').textContent = `queued #${r.id} · arm ${p.label}`;
+  $('armNote').textContent = `queued #${r.id} · arm ${p.label} on ${sym}`;
 }
 
 $('armBtn').onclick = () => {
@@ -303,10 +313,80 @@ $('armBtn').onclick = () => {
     : 'remote commands disarmed';
 };
 
+// ── instance strip ──────────────────────────────────────────────────
+// One card per live EA. With ten charts posting, this is the only way to know
+// which symbol the detail view below is actually describing.
+function renderInstances(rows, servedKey) {
+  const bar = $('instBar'), list = $('instList');
+  if (!rows || rows.length === 0) { bar.hidden = true; return; }
+  bar.hidden = false;
+
+  // Group by account: a terminal maps to exactly one login, so this is also
+  // "one group per terminal", which is how the caps will be scoped in step 2.
+  const byLogin = new Map();
+  for (const r of rows) {
+    if (!byLogin.has(r.login)) byLogin.set(r.login, []);
+    byLogin.get(r.login).push(r);
+  }
+
+  list.replaceChildren();
+  for (const [login, group] of byLogin) {
+    if (byLogin.size > 1 || login !== null) {
+      const h = document.createElement('div');
+      h.className = 'instAcct';
+      const srv = group.find((g) => g.server)?.server;
+      h.textContent = `${login ?? 'unknown account'}${srv ? ' · ' + srv : ''}`;
+      list.appendChild(h);
+    }
+    const strip = document.createElement('div');
+    strip.className = 'instStrip';
+    for (const r of group) {
+      const [tTxt, tCls] = TREND[r.trend] ?? ['—', 'mute'];
+      const el = document.createElement('div');
+      el.className = 'inst' + (r.key === servedKey ? ' sel' : '') +
+                     (r.stale ? ' stale' : '') + (r.collision ? ' clash' : '');
+      el.innerHTML =
+        `<div class="instSym">${r.symbol ?? '—'}</div>` +
+        `<div class="instMeta"><span class="${tCls}">${tTxt}</span>` +
+        `<span class="mute"> · ${r.drangePct != null ? r.drangePct.toFixed(0) + '% DR' : '—'}</span></div>` +
+        `<div class="instMeta"><span class="${r.pnlSymbol > 0 ? 'up' : r.pnlSymbol < 0 ? 'down' : 'mute'}">` +
+        `${r.pnlSymbol != null ? (r.pnlSymbol >= 0 ? '+' : '') + r.pnlSymbol.toFixed(2) : '—'}</span>` +
+        `<span class="mute"> · ${r.openCount} open · ${r.available} avail</span></div>` +
+        (r.stale ? `<div class="instMeta down">stale ${Math.round(r.ageMs / 1000)}s</div>` : '') +
+        (r.versionMatch === false ? `<div class="instMeta down">v${r.eaVersion}</div>` : '');
+      el.onclick = () => {
+        selectedKey = r.key;
+        localStorage.setItem(INST_KEY, r.key);
+        poll();
+      };
+      strip.appendChild(el);
+    }
+    list.appendChild(strip);
+  }
+
+  const clash = rows.find((r) => r.collision);
+  const cb = $('collisionBanner');
+  if (clash) {
+    cb.hidden = false;
+    cb.textContent =
+      `TWO CHARTS ON ${clash.symbol} — charts ${clash.collision.chartIds.join(' and ')} are both ` +
+      `posting as ${clash.key}. They overwrite each other; remove the EA from one of them.`;
+  } else cb.hidden = true;
+}
+
 // ── main render ─────────────────────────────────────────────────────
 function render(payload) {
   const { connected, stale, ageMs, state, versionMatch, eaVersion, contractVersion } = payload;
   $('ctrVer').textContent = contractVersion;
+
+  liveKey = payload.key ?? null;
+  renderInstances(payload.instances, liveKey);
+  // The chart we were pinned to disappeared (EA removed, terminal closed) —
+  // follow the server's fallback rather than showing an empty page forever.
+  if (payload.keyMissing && liveKey) {
+    selectedKey = liveKey;
+    localStorage.setItem(INST_KEY, liveKey);
+  }
 
   // The plan is a browser+server concern and must render whether or not the EA
   // is connected — otherwise the whole planning UI is dead until MT is running,
@@ -529,7 +609,8 @@ async function poll() {
   // A single failed metadata load must not disable the card forever.
   if (!srcMeta && Date.now() > srcRetryAt) { srcRetryAt = Date.now() + 15000; loadSourceMeta(); }
   try {
-    const payload = await api('/api/state').then((r) => r.json());
+    const q = selectedKey ? '?key=' + encodeURIComponent(selectedKey) : '';
+    const payload = await api('/api/state' + q).then((r) => r.json());
     lastState = payload.state;
     render(payload);
   } catch (e) {
