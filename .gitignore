@@ -2,6 +2,12 @@
 # Webhook URLs and any other credentials live here, never in source.
 LOCAL_SECRETS.txt
 *.secret
+# The updater config holds your RM_TOKEN.
+tools/updater.config.json
+
+# ── updater working files ──────────────────────────────────
+tools/backup/
+tools/.installed.*.json
 
 # ── compiled EA binaries ───────────────────────────────────
 # Rebuild from source with MetaEditor. Also: compiled binaries embed
