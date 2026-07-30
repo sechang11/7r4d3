@@ -328,6 +328,12 @@ Detection routines: `CheckSBRKAlert()`, `CheckCHCHAlert()`, `CheckDSTKAlert()`, 
 ### Layout constants
 Origin `(PANEL_X=30, PANEL_Y=30)`. Buttons `BTN_W=180, BTN_H=46`. Gaps `BTN_GAP=8, ROW_GAP=6, SECTION_GAP=12`. Dark-blue palette — `CLR_PANEL_BG=C'14,14,22'`, sections `C'24,26,38'`, ON `C'25,118,210'`, BUY `C'0,150,80'`, SELL `C'195,35,35'`, etc.
 
+Those numbers are **design pixels**, not final ones. Each layout constant expands to `UI(n)`, which multiplies by `g_uiScale = chartHeight / UI_REF_H` (`UI_REF_H = 1300`, a maximised terminal on a 2560×1440 desktop), clamped to `0.55 … 1.60`. The panel therefore holds a constant ~62% of chart height instead of overflowing a smaller screen.
+
+- `InpUIScale` (default `0` = auto) pins a fixed scale when you want one.
+- `UpdateUiScale()` runs in `OnInit()` before `BuildDashboard()`, and again on `CHARTEVENT_CHART_CHANGE` — which rebuilds only if the scale actually moved, since that event also fires on every scroll and zoom.
+- `LINE_WIDTH` is deliberately **not** scaled: entry/SL/TP thickness is a chart-drawing concern.
+
 ### Keyboard input modes
 | Mode | Trigger | Keys |
 |---|---|---|

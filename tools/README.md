@@ -81,3 +81,32 @@ pattern. The real one went from 1,808,514 bytes / 4,508 objects to 3,040 bytes.
 | Fresh install | downloads, compiles `0 errors, 0 warnings`, writes marker |
 | Unchanged source | *"Already up to date"*, no work done |
 | **Broken build** | compile fails, errors shown, **previous version restored and recompiled**, marker not advanced |
+
+## Windowed updater
+
+`Update-EA-GUI.bat` is the same updater with a window. It exists because the
+console version gave no confirmation — it ran, it worked, and it closed.
+
+It shows the installed version against the available one, what is live on the
+bridge right now, and a banner that states the outcome in one line. The log
+pane carries the worker's output verbatim.
+
+**Multiple MetaTrader installations.** The terminal dropdown is always visible,
+not just when detection is ambiguous, so you can see which install you are
+about to overwrite. **Rename** attaches a nickname to that installation; it is
+stored against the data-folder path in `updater.config.json` under `terminals`,
+so it stays with that terminal permanently. Switching platform (MT5/MT4) moves
+to a terminal that actually has that folder rather than failing.
+
+Both files run the same `Update-EA.ps1`, so there is one copy of the update
+logic. The GUI drives it with `-NonInteractive`, which replaces every prompt
+with a single `##RESULT##` json line:
+
+| Switch | Effect |
+|---|---|
+| `-NonInteractive` | never prompt; emit `##RESULT##` and exit |
+| `-CheckOnly` | report versions and live exposure, change nothing |
+| `-ListTerminals` | enumerate installations (with nicknames) and exit |
+| `-SetNickname <name> -TerminalDir <dir>` | name an installation |
+| `-TerminalDir <dir>` | target a specific terminal for this run |
+| `-Yes` | pre-answer the open-position confirmation |
