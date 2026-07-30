@@ -34,19 +34,54 @@ input int    InpCmdPollSec   = 2;    // Seconds between command polls (when remo
 input bool   InpPlanEnforce    = true; // Refuse ARMING patterns the plan forbids
 input bool   InpPlanBlockEnter = true; // Also refuse ENTER while a session cap is hit
 
-//--- Dashboard layout constants
-#define PANEL_X         30
-#define PANEL_Y         30
-#define BTN_W           180
-#define BTN_H           46
-#define BTN_GAP         8
-#define ROW_GAP         6
-#define SECTION_GAP     12
-#define LABEL_H         24
-#define FONT_SIZE       12
-#define FONT_SIZE_LBL   10
-#define FONT_SIZE_INFO  20
-#define FONT_SIZE_INFO2 13
+//--- Dashboard layout ------------------------------------------------
+// Sizes below are the DESIGN values, drawn against a chart canvas about
+// UI_REF_H pixels tall (a maximised terminal on a 2560x1440 desktop). Each one
+// is routed through UI(), which scales it by the current chart height, so the
+// panel occupies the same fraction of the workspace on any monitor instead of
+// overflowing a smaller one.
+#define UI_REF_H        1300
+
+input double InpUIScale = 0;   // Dashboard scale (0 = auto-fit to chart height)
+
+double g_uiScale = 1.0;
+
+int UI(const int px) { return (int)MathRound(px * g_uiScale); }
+
+// Called on init and on every chart resize. Clamped at both ends: below ~0.55
+// the text stops being legible, and above ~1.6 the panel starts eating the
+// chart it is supposed to sit beside.
+void UpdateUiScale()
+{
+   double s;
+   if(InpUIScale > 0.05)
+      s = InpUIScale;
+   else
+   {
+      int h = (int)ChartGetInteger(0, CHART_HEIGHT_IN_PIXELS);
+      if(h <= 0) h = UI_REF_H;                 // not laid out yet
+      s = (double)h / (double)UI_REF_H;
+   }
+   if(s < 0.55) s = 0.55;
+   if(s > 1.60) s = 1.60;
+   g_uiScale = s;
+}
+
+//--- Dashboard layout constants (design px, scaled at every use)
+#define PANEL_X         UI(30)
+#define PANEL_Y         UI(30)
+#define BTN_W           UI(180)
+#define BTN_H           UI(46)
+#define BTN_GAP         UI(8)
+#define ROW_GAP         UI(6)
+#define SECTION_GAP     UI(12)
+#define LABEL_H         UI(24)
+#define FONT_SIZE       UI(12)
+#define FONT_SIZE_LBL   UI(10)
+#define FONT_SIZE_INFO  UI(20)
+#define FONT_SIZE_INFO2 UI(13)
+// Price-line thickness is a chart-drawing concern, not a panel one, so it
+// stays fixed - a scaled 2px SL line is harder to see, not more proportional.
 #define LINE_WIDTH      4
 
 //--- Colour palette
@@ -693,14 +728,14 @@ void BuildDashboard()
 
    int x   = PANEL_X;
    int y   = PANEL_Y;
-   int pad = 14;
+   int pad = UI(14);
    int innerW    = 3 * BTN_W + 2 * BTN_GAP;   // 556
    int panelW    = innerW + 2 * pad;            // 584
    g_panelW = panelW;
 
    int sectionH    = LABEL_H + BTN_H;
    int orderSecH   = LABEL_H + 2 * BTN_H + BTN_GAP;
-   int infoBarH    = 102;
+   int infoBarH    = UI(102);
 
    int panelH = pad + sectionH + SECTION_GAP                  // Risk
               + orderSecH + ROW_GAP                            // Market
@@ -803,7 +838,7 @@ void BuildDashboard()
    cy += BTN_H + ROW_GAP;
 
    // â”€â”€ LIMIT ORDER (H button next to label) â”€â”€
-   int hBtnW = 28;
+   int hBtnW = UI(28);
    CreateLabel("RM_LblLmt", cx + 2, cy + 2, "LIMIT ORDER", CLR_TEXT_DIM, FONT_SIZE_LBL);
    CreateButton("RM_HiddenLmt", cx + 82, cy, hBtnW, LABEL_H, "H",
                 g_isHiddenLmt ? CLR_BTN_HIDDEN_ON : CLR_BTN_HIDDEN,
@@ -1466,10 +1501,10 @@ void SetChartTheme()
 //+------------------------------------------------------------------+
 void BuildRightPanel(int leftEdge, int topY, int totalH)
 {
-   int rpPad  = 8;
-   int rpBtnW = 60;
-   int rpBtnH = 46;
-   int rpGap  = 6;
+   int rpPad  = UI(8);
+   int rpBtnW = UI(60);
+   int rpBtnH = UI(46);
+   int rpGap  = UI(6);
    int rpW    = rpBtnW + 2 * rpPad;
    int rpX    = leftEdge + 8;
 
@@ -1627,10 +1662,10 @@ void BuildRightPanel(int leftEdge, int topY, int totalH)
 //+------------------------------------------------------------------+
 void BuildTestPanel(int leftEdge, int topY, int totalH)
 {
-   int tpPad  = 8;
-   int tpBtnW = 60;
-   int tpBtnH = 46;
-   int tpGap  = 6;
+   int tpPad  = UI(8);
+   int tpBtnW = UI(60);
+   int tpBtnH = UI(46);
+   int tpGap  = UI(6);
    int tpW    = tpBtnW + 2 * tpPad;
    int tpX    = leftEdge + 8;
 
@@ -1909,10 +1944,10 @@ void BuildTestPanel(int leftEdge, int topY, int totalH)
 //+------------------------------------------------------------------+
 void BuildAlertsPanel(int leftEdge, int topY, int totalH)
 {
-   int apPad  = 8;
-   int apBtnW = 60;
-   int apBtnH = 46;
-   int apGap  = 6;
+   int apPad  = UI(8);
+   int apBtnW = UI(60);
+   int apBtnH = UI(46);
+   int apGap  = UI(6);
    int apW    = apBtnW + 2 * apPad;
    int apX    = leftEdge + 8;
 
@@ -9757,6 +9792,7 @@ void ApplyPlanGating()
 int OnInit()
 {
    SetChartTheme();
+   UpdateUiScale();          // before BuildDashboard - every size depends on it
    g_dStkMode = 1;
    BuildDashboard();
    ChartSetInteger(0, CHART_EVENT_OBJECT_DELETE, true);
@@ -10004,6 +10040,25 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
 {
    if(id == CHARTEVENT_MOUSE_MOVE)
    { HandleHover((int)lparam, (int)dparam); return; }
+
+   // Chart resized, or the window moved to a different monitor: re-derive the
+   // scale and rebuild only when it actually moved - CHART_CHANGE also fires
+   // for every scroll and zoom, and rebuilding on those would flicker badly.
+   if(id == CHARTEVENT_CHART_CHANGE)
+   {
+      double beforeScale = g_uiScale;
+      UpdateUiScale();
+      if(MathAbs(g_uiScale - beforeScale) > 0.01 && !g_dashboardHidden)
+      {
+         // Hide then show: that pair already tears the panel down without
+         // touching chart drawings and rebuilds it with every button colour
+         // restored. Duplicating it here would just be a second copy to
+         // keep in sync.
+         ToggleDashboardVisibility();
+         ToggleDashboardVisibility();
+      }
+      return;
+   }
 
    if(id == CHARTEVENT_KEYDOWN && lparam == 13 && !g_customRiskEditing && !g_splitEditing)
    {
