@@ -15,7 +15,8 @@
 
 param(
   [ValidateSet('mq5', 'mq4')] [string] $Platform = 'mq5',
-  [switch] $Force
+  [switch] $Force,
+  [switch] $NoSelfUpdate   # set internally after a self-update, to stop recursion
 )
 
 $ErrorActionPreference = 'Stop'
@@ -31,21 +32,66 @@ Say '  RiskManager EA updater' 'Cyan'
 Say '  ----------------------' 'Cyan'
 
 # -- config ---------------------------------------------------------
+function Find-MetaEditor {
+  Get-ChildItem 'C:\Program Files','C:\Program Files (x86)' -Filter 'MetaEditor*.exe' `
+    -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
+}
+function Find-DataDirs {
+  Get-ChildItem "$env:APPDATA\MetaQuotes\Terminal" -Directory -ErrorAction SilentlyContinue |
+    Where-Object { Test-Path (Join-Path $_.FullName 'MQL5\Experts') } |
+    Select-Object -ExpandProperty FullName
+}
+
+# MetaTrader names each installation's data folder after a hash of its install
+# path, so the folder name alone is meaningless to a human. origin.txt inside
+# it holds the actual install path - that is what makes the list readable.
+# (It is UTF-16, so it must be read with -Encoding Unicode.)
+function Get-TerminalLabel($dir) {
+  $origin = Join-Path $dir 'origin.txt'
+  $install = if (Test-Path $origin) {
+    ((Get-Content $origin -Encoding Unicode -ErrorAction SilentlyContinue) -join '').Trim()
+  } else { '' }
+  $has = Test-Path (Join-Path $dir 'MQL5\Experts\RiskManager.ex5')
+  [pscustomobject]@{
+    Dir       = $dir
+    Install   = $(if ($install) { $install } else { '(install path unknown)' })
+    HasEa     = $has
+    Short     = (Split-Path $dir -Leaf).Substring(0, 8)
+  }
+}
+
+# Ask which terminal to target when more than one is present, rather than
+# guessing or making the user hand-edit a hash into JSON.
+function Select-TerminalDir($dirs) {
+  $items = @($dirs | ForEach-Object { Get-TerminalLabel $_ })
+  Say ''
+  Say '  Multiple MetaTrader installations found:' 'Yellow'
+  for ($i = 0; $i -lt $items.Count; $i++) {
+    $m = $items[$i]
+    Say ("    [{0}] {1}" -f ($i + 1), $m.Install) 'White'
+    Say ("        {0}...  {1}" -f $m.Short, $(if ($m.HasEa) { 'RiskManager already installed' } else { 'no RiskManager yet' })) 'DarkGray'
+  }
+  Say ''
+  while ($true) {
+    $pick = Read-Host "  Which one? [1-$($items.Count)]"
+    if ($pick -match '^\d+$' -and [int]$pick -ge 1 -and [int]$pick -le $items.Count) {
+      return $items[[int]$pick - 1].Dir
+    }
+    Say '  Enter a number from the list.' 'Yellow'
+  }
+}
+
 if (-not (Test-Path $configPath)) {
-  # Best-effort auto-detection so first run is close to zero-config.
-  $editor = Get-ChildItem 'C:\Program Files','C:\Program Files (x86)' -Filter 'MetaEditor*.exe' `
-              -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
-  $dataDirs = Get-ChildItem "$env:APPDATA\MetaQuotes\Terminal" -Directory -ErrorAction SilentlyContinue |
-              Where-Object { Test-Path (Join-Path $_.FullName 'MQL5\Experts') } |
-              Select-Object -ExpandProperty FullName
+  $editor   = Find-MetaEditor
+  $dataDirs = Find-DataDirs
 
   # NOTE: `if` is a statement, not an expression, so it must be wrapped in
   # $( ) to be used as a hashtable value - otherwise this fails to parse.
   @{
     bridgeUrl      = 'https://7r4d3-production.up.railway.app'
     token          = ''
-    metaEditorPath = $(if ($editor) { $editor } else { 'C:\Program Files\MetaTrader 5\MetaEditor64.exe' })
-    terminalDataDir= $(if ($dataDirs) { @($dataDirs)[0] } else { "$env:APPDATA\MetaQuotes\Terminal\<your-hash>" })
+    metaEditorPath = $(if ($editor) { $editor } else { '' })
+    terminalDataDir= $(if ($dataDirs) { @($dataDirs)[0] } else { '' })
   } | ConvertTo-Json | Set-Content $configPath -Encoding UTF8
 
   Say ''
@@ -61,6 +107,47 @@ if (-not (Test-Path $configPath)) {
 }
 
 $cfg = Get-Content $configPath -Raw | ConvertFrom-Json
+
+# A config downloaded from the dashboard arrives with the token filled in but
+# the machine-specific paths blank. Detect them here and write them back, so
+# the bootstrap really is "download, run".
+$patched = $false
+# Terminal first, then MetaEditor - so the compiler can be taken from the SAME
+# installation as the target terminal. A MetaEditor from a different install
+# may not resolve <Trade\Trade.mqh> against the right Include folder.
+if (-not $cfg.terminalDataDir) {
+  $dirs = @(Find-DataDirs)
+  if ($dirs.Count -eq 0) {
+    Die ("no MetaTrader data folder found under $env:APPDATA\MetaQuotes\Terminal.`n" +
+         "  If the terminal runs in portable mode its data sits next to the .exe -`n" +
+         "  set terminalDataDir in updater.config.json to that folder.")
+  }
+  elseif ($dirs.Count -eq 1) {
+    $cfg.terminalDataDir = $dirs[0]
+    $patched = $true
+    Say "  Detected terminal: $((Get-TerminalLabel $dirs[0]).Install)"
+  }
+  else {
+    $cfg.terminalDataDir = Select-TerminalDir $dirs
+    $patched = $true
+    Say "  Using: $((Get-TerminalLabel $cfg.terminalDataDir).Install)" 'Green'
+    Say '  (change terminalDataDir in updater.config.json to switch later)' 'DarkGray'
+  }
+}
+
+if (-not $cfg.metaEditorPath) {
+  # Prefer the MetaEditor that ships with the chosen terminal.
+  $install = (Get-TerminalLabel $cfg.terminalDataDir).Install
+  $sibling = @('MetaEditor64.exe', 'metaeditor.exe') |
+             ForEach-Object { Join-Path $install $_ } |
+             Where-Object { Test-Path $_ } | Select-Object -First 1
+  $found = if ($sibling) { $sibling } else { Find-MetaEditor }
+  if (-not $found) { Die 'MetaEditor not found - set metaEditorPath in updater.config.json' }
+  $cfg.metaEditorPath = $found
+  $patched = $true
+  Say "  Using MetaEditor: $found"
+}
+if ($patched) { $cfg | ConvertTo-Json | Set-Content $configPath -Encoding UTF8 }
 if (-not $cfg.token)                        { Die "token is empty in $configPath" }
 if (-not (Test-Path $cfg.metaEditorPath))   { Die "MetaEditor not found at $($cfg.metaEditorPath)" }
 if (-not (Test-Path $cfg.terminalDataDir))  { Die "Terminal data folder not found at $($cfg.terminalDataDir)" }
@@ -78,9 +165,40 @@ Say "  Bridge : $($cfg.bridgeUrl)"
 Say "  Target : $expertsDir"
 Say ''
 try {
-  $meta = (Invoke-RestMethod "$($cfg.bridgeUrl)/api/source" -Headers $headers -TimeoutSec 20).sources.$Platform
+  $all  = (Invoke-RestMethod "$($cfg.bridgeUrl)/api/source" -Headers $headers -TimeoutSec 20).sources
+  $meta = $all.$Platform
 } catch {
   Die "could not reach the bridge - $($_.Exception.Message)`n  (a 401 means the token is wrong)"
+}
+
+# -- self-update ----------------------------------------------------
+# The script replaces itself when the bridge publishes a newer one, then
+# re-runs. That is what lets Update-EA.bat remain the only file anyone ever
+# has to download by hand - improvements to the updater arrive on their own.
+if (-not $NoSelfUpdate -and $all.ps1 -and $all.ps1.available) {
+  $me     = $MyInvocation.MyCommand.Path
+  $mySha  = (Get-FileHash $me -Algorithm SHA256).Hash.Substring(0, 12).ToLower()
+  if ($mySha -ne $all.ps1.sha256) {
+    Say ''
+    Say "  Updater itself is out of date ($mySha -> $($all.ps1.sha256)) - updating." 'Yellow'
+    $tmpPs = Join-Path $env:TEMP 'Update-EA.new.ps1'
+    Invoke-WebRequest "$($cfg.bridgeUrl)/api/source/ps1" -Headers $headers -OutFile $tmpPs -TimeoutSec 60
+    # Sanity-check before overwriting ourselves: a truncated or error-body
+    # download must not be able to brick the updater.
+    $err = $null
+    [System.Management.Automation.Language.Parser]::ParseFile($tmpPs, [ref]$null, [ref]$err) > $null
+    if ($err.Count -or (Get-Item $tmpPs).Length -lt 2000) {
+      Say '  Downloaded updater failed its syntax check - keeping the current one.' 'Red'
+      Remove-Item $tmpPs -Force -ErrorAction SilentlyContinue
+    } else {
+      Copy-Item $me (Join-Path $env:TEMP 'Update-EA.previous.ps1') -Force
+      Copy-Item $tmpPs $me -Force
+      Remove-Item $tmpPs -Force
+      Say '  Updated. Re-running the new version...' 'Green'
+      & powershell -NoProfile -ExecutionPolicy Bypass -File $me -Platform $Platform -NoSelfUpdate @(if ($Force) { '-Force' })
+      exit $LASTEXITCODE
+    }
+  }
 }
 if (-not $meta.available) { Die "$Platform is not available on this deployment" }
 

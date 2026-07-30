@@ -494,6 +494,30 @@ async function downloadSource(key) {
   }
 }
 
+$('getBat').onclick = () => downloadSource('bat');
+$('getPs1').onclick = () => downloadSource('ps1');
+
+// Built in the browser, not fetched: the token is already here in
+// localStorage, and this way it never round-trips through the server just to
+// come back again. Paths are left blank on purpose — the script detects them
+// on first run and writes them back.
+$('getCfg').onclick = () => {
+  if (!token) { $('srcMsg').textContent = 'Enter the bridge token first.'; return; }
+  const cfg = {
+    bridgeUrl: location.origin,
+    token,
+    metaEditorPath: '',
+    terminalDataDir: '',
+  };
+  const blob = new Blob([JSON.stringify(cfg, null, 4)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'updater.config.json';
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+  $('srcMsg').textContent = 'Saved updater.config.json (bridge URL and token filled in). Keep it private.';
+};
+
 $('srcGet5').onclick = () => downloadSource('mq5');
 $('srcGet4').onclick = () => downloadSource('mq4');
 $('srcGetTpl').onclick = () => downloadSource('tpl');

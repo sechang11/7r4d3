@@ -143,9 +143,14 @@ const appendJournal = (entry) => {
 const SRC_ROOT = path.join(__dirname, '..');
 // key -> { rel: path within the repo, name: filename to save as }
 const SOURCES = {
-  mq5: { rel: 'RiskManager.mq5',     name: 'RiskManager.mq5' },
-  mq4: { rel: 'RiskManager.mq4',     name: 'RiskManager.mq4' },
-  tpl: { rel: 'templates/default.tpl', name: 'default.tpl'   },
+  mq5: { rel: 'RiskManager.mq5',       name: 'RiskManager.mq5' },
+  mq4: { rel: 'RiskManager.mq4',       name: 'RiskManager.mq4' },
+  tpl: { rel: 'templates/default.tpl', name: 'default.tpl'     },
+  // The updater serves itself, which is what lets the .bat stay the only
+  // file a user ever has to fetch by hand: the .ps1 replaces itself when
+  // a newer one is published.
+  bat: { rel: 'tools/Update-EA.bat',   name: 'Update-EA.bat'   },
+  ps1: { rel: 'tools/Update-EA.ps1',   name: 'Update-EA.ps1'   },
 };
 
 // Read RM_VERSION out of the file itself rather than trusting a constant,
