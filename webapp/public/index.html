@@ -196,13 +196,26 @@
     <div class="bootstrap">
       <div>
         <strong>New machine? Start here.</strong>
-        <div class="desc">Grab these three, put them in one folder, double-click the .bat.
-          After that it updates the EA, the template and itself — you never download by hand again.</div>
+        <div class="desc">Grab all four, put them in one folder, fill your token into the
+          .json, then double-click <code>Update-EA-GUI.bat</code> — that is the one with a
+          window. After this it updates the EA, the template and itself; you never download
+          by hand again.</div>
       </div>
       <div class="spacer"></div>
-      <button class="primary" id="getBat">Update-EA.bat</button>
+      <button class="primary" id="getGuiBat">Update-EA-GUI.bat</button>
+      <button class="primary" id="getGuiPs1">Update-EA-GUI.ps1</button>
       <button class="primary" id="getPs1">Update-EA.ps1</button>
       <button class="primary" id="getCfg">updater.config.json</button>
+    </div>
+
+    <div class="bootstrap" style="border-color:var(--border)">
+      <div>
+        <strong>Prefer a console?</strong>
+        <div class="desc"><code>Update-EA.bat</code> does the same job with scrolling text
+          instead of a window. Both drive the same <code>Update-EA.ps1</code>.</div>
+      </div>
+      <div class="spacer"></div>
+      <button class="ghost" id="getBat">Update-EA.bat</button>
     </div>
 
     <ol class="srcSteps">

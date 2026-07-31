@@ -566,7 +566,17 @@ async function downloadSource(key) {
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
-    $('srcMsg').textContent = `Saved ${a.download}. Now compile it in MetaEditor (F7) and re-attach the EA.`;
+    // "compile it in MetaEditor" is nonsense advice for a .bat or a template.
+    const after = {
+      mq5:    'Now compile it in MetaEditor (F7) and re-attach the EA.',
+      mq4:    'Now compile it in MetaEditor (F7) and re-attach the EA.',
+      tpl:    'Put it in MQL5/Profiles/Templates, then right-click chart → Template.',
+      guibat: 'Keep it beside Update-EA.ps1 and updater.config.json, then double-click it.',
+      guips1: 'Keep it beside Update-EA-GUI.bat — the .bat is the one you double-click.',
+      bat:    'Keep it beside Update-EA.ps1 and updater.config.json, then double-click it.',
+      ps1:    'Keep it in the same folder as the .bat; the .bat runs it.',
+    }[key] ?? '';
+    $('srcMsg').textContent = `Saved ${a.download}. ${after}`;
   } catch (e) {
     $('srcMsg').textContent = e.message === 'unauthorised'
       ? 'Enter the bridge token first.'
@@ -574,8 +584,10 @@ async function downloadSource(key) {
   }
 }
 
-$('getBat').onclick = () => downloadSource('bat');
-$('getPs1').onclick = () => downloadSource('ps1');
+$('getBat').onclick    = () => downloadSource('bat');
+$('getPs1').onclick    = () => downloadSource('ps1');
+$('getGuiBat').onclick = () => downloadSource('guibat');
+$('getGuiPs1').onclick = () => downloadSource('guips1');
 
 // Built in the browser, not fetched: the token is already here in
 // localStorage, and this way it never round-trips through the server just to
