@@ -110,3 +110,23 @@ with a single `##RESULT##` json line:
 | `-SetNickname <name> -TerminalDir <dir>` | name an installation |
 | `-TerminalDir <dir>` | target a specific terminal for this run |
 | `-Yes` | pre-answer the open-position confirmation |
+
+## Renaming the EA
+
+MetaTrader's server-side journal can record the expert's filename, so a
+distinctive one is a handle that links accounts. Nothing in the EA source
+depends on its own name, so set `eaName` in `updater.config.json`:
+
+```json
+{ "eaName": "ChartTools" }
+```
+
+The updater then installs, compiles, backs up and version-tracks under that
+name. Use a different one per machine if it matters.
+
+## Install markers
+
+`.installed.<platform>.<terminal>.<name>.json` — one per (platform, terminal,
+EA name). A single shared marker used to report "up to date" for a terminal
+that had never been written to, which is exactly how a two-month-old binary
+went unnoticed on a second install.

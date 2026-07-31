@@ -32,7 +32,11 @@ param(
 $ErrorActionPreference = 'Stop'
 $here       = Split-Path -Parent $MyInvocation.MyCommand.Path
 $configPath = Join-Path $here 'updater.config.json'
-$markerPath = Join-Path $here ".installed.$Platform.json"
+# $markerPath and $eaName are resolved after the config is read - the marker is
+# per terminal, because one marker for every installation reports "up to date"
+# for a terminal that was never touched.
+$markerPath = $null
+$eaName     = 'RiskManager'
 
 function Say($msg, $colour = 'Gray') { Write-Host $msg -ForegroundColor $colour }
 
@@ -273,12 +277,28 @@ if (-not (Test-Path $expertsDir)) {
 }
 
 $headers  = @{ Authorization = "Bearer $($cfg.token)" }
-$srcFile  = Join-Path $expertsDir "RiskManager.$Platform"
-$exFile   = Join-Path $expertsDir ("RiskManager." + $(if ($Platform -eq 'mq5') { 'ex5' } else { 'ex4' }))
+
+# The EA may be installed under any name. MT's server-side journal can record
+# the expert's filename, so a distinctive one is a handle across accounts;
+# set "eaName" in the config to install it as something else. Nothing in the
+# EA source depends on its own filename.
+if ($cfg.PSObject.Properties.Name -contains 'eaName' -and $cfg.eaName) {
+  $eaName = ($cfg.eaName -replace '[^A-Za-z0-9_\- ]', '').Trim()
+  if (-not $eaName) { Die 'eaName in the config has no usable characters' }
+}
+$srcFile  = Join-Path $expertsDir "$eaName.$Platform"
+$exFile   = Join-Path $expertsDir ("$eaName." + $(if ($Platform -eq 'mq5') { 'ex5' } else { 'ex4' }))
+
+# One marker per (platform, terminal, name). A single shared marker claimed
+# "up to date" for terminals the updater had never written to.
+$termTag    = (Split-Path $cfg.terminalDataDir -Leaf)
+if ($termTag.Length -gt 8) { $termTag = $termTag.Substring(0, 8) }
+$markerPath = Join-Path $here ".installed.$Platform.$termTag.$eaName.json"
 
 # -- what's available -----------------------------------------------
 Say "  Bridge : $($cfg.bridgeUrl)"
 Say "  Target : $expertsDir"
+if ($eaName -ne 'RiskManager') { Say "  Name   : $eaName.$Platform" }
 Say ''
 try {
   $all  = (Invoke-RestMethod "$($cfg.bridgeUrl)/api/source" -Headers $headers -TimeoutSec 20).sources
@@ -353,7 +373,13 @@ if (-not $meta.available) { Die "$Platform is not available on this deployment" 
 
 Say "  Available : v$($meta.version)  $([math]::Round($meta.bytes/1KB)) KB  $($meta.sha256)"
 
-$installed = if (Test-Path $markerPath) { Get-Content $markerPath -Raw | ConvertFrom-Json } else { $null }
+# Deliberately no fallback to the old shared marker. It cannot know WHICH
+# terminal it described - it reported "v6.03 installed" for a terminal still
+# running a two-month-old binary, because an .ex5 merely existed there. A
+# terminal with no marker of its own is treated as never installed; the cost
+# is one extra reinstall, and the alternative is a confident wrong answer.
+$installed = $null
+if (Test-Path $markerPath) { $installed = Get-Content $markerPath -Raw | ConvertFrom-Json }
 if ($installed) { Say "  Installed : v$($installed.version)  $($installed.sha256)" }
 
 $upToDate = ($installed -and $installed.sha256 -eq $meta.sha256)

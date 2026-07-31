@@ -18,8 +18,24 @@ Most of the changes below double as better trading practice — not resting stop
 | Fill latency — the gap between a level being touched and the order arriving | Discord alerts |
 | Terminal build, login IP, session pattern | Which button you clicked |
 | MT5 server-side journal often records the **EA filename** | The MQL source |
+| — | **The Experts log** — `<data folder>\MQL5\Logs\*.log` is a local file. Nothing ships it to the broker, and two terminals printing the same banner are not correlated by anyone. |
 
 Everything actionable is therefore in **order flow**, not in the dashboard or the web app.
+
+**On logging.** The Experts log is local, so `Print()` is not a broker-visible
+signal. It is still a correlation handle in one narrow case: logs handed over
+for a support ticket or a dispute, where a distinctive version banner ties two
+accounts together. `InpDebugLog` is therefore **off by default**, and the
+on-chart version badge covers verification without writing anything. Note that
+MetaTrader writes its own `expert <Name> (SYMBOL,TF) loaded successfully` line
+regardless — the EA cannot suppress that, which is the real argument for
+renaming rather than for staying quiet.
+
+**On renaming.** Nothing in the EA source depends on its own filename, so it can
+be installed under any name. Set `eaName` in `updater.config.json` and the
+updater installs, compiles, backs up and version-tracks under that name. Use a
+different name per machine if the filename in the server-side journal matters —
+that is signature #10 below, and renaming is its whole mitigation.
 
 ---
 

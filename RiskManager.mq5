@@ -44,6 +44,11 @@ input bool   InpPlanBlockEnter = true; // Also refuse ENTER while a session cap 
 
 input double InpUIScale = 0;   // Dashboard scale (0 = auto-fit to chart height)
 
+// Default off: nothing this EA writes to the log is needed in normal use, and
+// a version banner is a correlation handle across accounts if logs are ever
+// shared. The on-chart badge covers verification without leaving a trace.
+input bool   InpDebugLog = false;  // Print build/scale to the Experts log
+
 double g_uiScale = 1.0;
 
 int UI(const int px) { return (int)MathRound(px * g_uiScale); }
@@ -9806,14 +9811,16 @@ int OnInit()
    SetChartTheme();
    UpdateUiScale();          // before BuildDashboard - every size depends on it
 
-   // Stamped into the Experts log on every load. This is the authoritative
-   // answer to "did the update take?" - the updater can only report what it
-   // wrote to disk, not what MetaTrader has actually loaded.
-   PrintFormat("RiskManager v%s loaded on %s %s | chart %dx%d px | ui scale %.2fx%s",
-               RM_VERSION, _Symbol, EnumToString((ENUM_TIMEFRAMES)Period()),
-               (int)ChartGetInteger(0, CHART_WIDTH_IN_PIXELS),
-               (int)ChartGetInteger(0, CHART_HEIGHT_IN_PIXELS),
-               g_uiScale, (InpUIScale > 0.05 ? " (fixed)" : " (auto)"));
+   // Off by default. The Experts log is a local file the broker cannot read,
+   // but a distinctive version string is still a correlation handle if logs
+   // are ever handed over for a support ticket or dispute - and the on-chart
+   // badge answers "which build is running?" without writing anything.
+   if(InpDebugLog)
+      PrintFormat("v%s | %s %s | chart %dx%d px | ui %.2fx%s",
+                  RM_VERSION, _Symbol, EnumToString((ENUM_TIMEFRAMES)Period()),
+                  (int)ChartGetInteger(0, CHART_WIDTH_IN_PIXELS),
+                  (int)ChartGetInteger(0, CHART_HEIGHT_IN_PIXELS),
+                  g_uiScale, (InpUIScale > 0.05 ? " (fixed)" : " (auto)"));
 
    g_dStkMode = 1;
    BuildDashboard();
