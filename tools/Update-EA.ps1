@@ -312,7 +312,20 @@ try {
   $all  = (Invoke-RestMethod "$($cfg.bridgeUrl)/api/source" -Headers $headers -TimeoutSec 20).sources
   $meta = $all.$Platform
 } catch {
-  Die "could not reach the bridge - $($_.Exception.Message)`n  (a 401 means the token is wrong)"
+  # A 401 is not a connectivity problem - the bridge answered, it just refused
+  # the token. Saying "could not reach" for that sends you looking at the
+  # network when the fix is one field in the config.
+  $code = $null
+  try { $code = [int]$_.Exception.Response.StatusCode } catch { }
+  if ($code -eq 401) {
+    Die ("the bridge rejected your token.`n" +
+         "  $($cfg.bridgeUrl) answered, so the connection is fine - the token is wrong.`n" +
+         "  Fix: open the dashboard, enter your RM_TOKEN, and use its`n" +
+         "       'updater.config.json' button - it writes the URL and token for you.`n" +
+         "  Or paste RM_TOKEN from your host's service variables into`n" +
+         "       $configPath")
+  }
+  Die "could not reach the bridge - $($_.Exception.Message)"
 }
 
 # -- self-update ----------------------------------------------------
