@@ -23,6 +23,7 @@ let lastState = null;
 const INST_KEY = 'rm_instance';
 let selectedKey = localStorage.getItem(INST_KEY) ?? null;
 let liveKey = null;               // what the server actually served us
+let lastRows = [];                // instance summaries from the last poll
 
 // ── auth ────────────────────────────────────────────────────────────
 // The server guards /api/* with a shared secret (RM_TOKEN). We keep it in
@@ -323,10 +324,100 @@ $('armBtn').onclick = () => {
     : 'remote commands disarmed';
 };
 
+// ── open positions ──────────────────────────────────────────────────
+// Assembled across every instance on the selected account, so this reads like
+// MT5's Trade tab rather than one symbol at a time. Each EA reports only its
+// OWN symbol's tickets — that keeps each payload proportional, but it also
+// means a position on a symbol with no EA attached cannot appear here. The
+// note under the table says so when the account P&L disagrees with the sum.
+function renderPositions(rows, state) {
+  const card = $('posCard');
+  const login = state?.account?.login ?? null;
+  if (login === null) { card.hidden = true; return; }
+
+  const mine = (rows ?? []).filter((r) => r.login === login);
+  const all = [];
+  for (const r of mine)
+    for (const p of (r.positions ?? []))
+      all.push({ ...p, symbol: r.symbol, stale: r.stale, key: r.key });
+
+  card.hidden = false;
+  $('posScope').textContent = `account ${login} · ${mine.length} chart${mine.length === 1 ? '' : 's'} reporting`;
+
+  const tbl = $('posTbl');
+  tbl.replaceChildren();
+  if (all.length === 0) {
+    const tr = tbl.insertRow();
+    tr.insertCell().outerHTML = '<td colspan="9" class="mute" style="padding:10px 0">no open positions</td>';
+    $('posTotal').textContent = '';
+  } else {
+    const head = tbl.createTHead().insertRow();
+    for (const h of ['Symbol', 'Type', 'Lots', 'Open', 'S/L', 'T/P', 'P&L', 'Since', ''])
+      head.insertCell().outerHTML = `<th>${h}</th>`;
+
+    all.sort((a, b) => a.symbol.localeCompare(b.symbol) || a.ticket - b.ticket);
+    for (const p of all) {
+      const tr = tbl.insertRow();
+      const d = p.symbol.includes('JPY') ? 3 : undefined;
+      const cells = [
+        `<strong>${p.symbol}</strong>`,
+        `<span class="${p.type === 'buy' ? 'up' : 'down'}">${p.type.toUpperCase()}</span>`,
+        p.lots.toFixed(2),
+        fmt(p.open, d ?? digits),
+        p.sl ? fmt(p.sl, d ?? digits) : '<span class="mute">—</span>',
+        p.tp ? fmt(p.tp, d ?? digits) : '<span class="mute">—</span>',
+        `<span class="${p.profit > 0 ? 'up' : p.profit < 0 ? 'down' : 'mute'}">` +
+          `${p.profit >= 0 ? '+' : ''}${p.profit.toFixed(2)}</span>`,
+        `<span class="mute">${p.openTime ? fmtAge(Date.now() - p.openTime * 1000) : '—'}</span>`,
+      ];
+      cells.forEach((c) => { tr.insertCell().innerHTML = c; });
+
+      const td = tr.insertCell();
+      const b = btn('Close', 'danger', () => {
+        if (!confirm(`Close #${p.ticket} — ${p.type.toUpperCase()} ${p.lots} ${p.symbol}?\n\n` +
+                     `Open ${fmt(p.open, d ?? digits)}, P&L ${p.profit >= 0 ? '+' : ''}${p.profit.toFixed(2)}`)) return;
+        cmdTo(p.key, 'closeTicket', { ticket: p.ticket }, `close #${p.ticket}`);
+      });
+      // The command must go to the EA that owns that symbol, not the selected one.
+      b.disabled = p.stale;
+      if (p.stale) b.title = 'that chart is not reporting right now';
+      td.appendChild(b);
+    }
+    const sum = all.reduce((a, p) => a + p.profit, 0);
+    $('posTotal').innerHTML = `${all.length} position${all.length === 1 ? '' : 's'} · ` +
+      `<span class="${sum > 0 ? 'up' : sum < 0 ? 'down' : 'mute'}">${sum >= 0 ? '+' : ''}${sum.toFixed(2)}</span>`;
+  }
+
+  // pnlAll is account-wide; the table is only what the attached EAs can see.
+  const pnlAll = state?.account?.pnlAll;
+  const sum = all.reduce((a, p) => a + p.profit, 0);
+  $('posNote').textContent =
+    (pnlAll != null && Math.abs(pnlAll - sum) > 0.01)
+      ? `Account P&L is ${pnlAll.toFixed(2)} but these tickets total ${sum.toFixed(2)} — ` +
+        `the difference is on symbols with no EA attached, which cannot be listed or closed from here.`
+      : '';
+}
+
 // ── trade controls ──────────────────────────────────────────────────
 // Every button here queues a command addressed at the selected instance. None
 // of them send an order: the only action that does is `execute`, and the EA
 // refuses it unless InpAllowRemoteExec is on.
+async function cmdTo(key, action, params, msg) {
+  if (!key) { $('ctrlMsg').textContent = 'no instance selected'; return null; }
+  try {
+    const r = await api('/api/commands', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, target: key, params: params ?? {} }),
+    }).then((x) => x.json());
+    $('ctrlMsg').textContent = `${msg ?? action} — queued #${r.id}`;
+    return r;
+  } catch (e) {
+    $('ctrlMsg').textContent = `failed: ${e.message}`;
+    return null;
+  }
+}
+
 async function cmd(action, params, msg) {
   if (!liveKey) { $('ctrlMsg').textContent = 'no instance selected'; return null; }
   try {
@@ -573,6 +664,7 @@ function render(payload) {
   $('ctrVer').textContent = contractVersion;
 
   liveKey = payload.key ?? null;
+  lastRows = payload.instances ?? [];
   renderInstances(payload.instances, liveKey);
   // The chart we were pinned to disappeared (EA removed, terminal closed) —
   // follow the server's fallback rather than showing an empty page forever.
@@ -593,6 +685,7 @@ function render(payload) {
     $('connTxt').textContent = 'waiting for EA…';
     renderBuckets([], null, session);
     $('ctrlCard').hidden = true;
+    $('posCard').hidden = true;
     return;
   }
   if (stale)         { conn.className = 'pill stale'; $('connTxt').textContent = `stale ${Math.round(ageMs / 1000)}s`; }
@@ -610,6 +703,7 @@ function render(payload) {
   digits = state.digits ?? 2;
 
   renderControls(state);
+  renderPositions(lastRows, state);
 
   $('sym').textContent   = state.symbol ?? '—';
   $('price').textContent = fmt(state.price?.bid);

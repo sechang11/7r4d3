@@ -4,7 +4,7 @@
 //|                                  Copyright 2026, MetaQuotes Ltd. |
 //|                                             https://www.mql4.com |
 //+------------------------------------------------------------------+
-#define RM_VERSION "6.08"
+#define RM_VERSION "6.09"
 
 #property copyright "Copyright 2026, MetaQuotes Ltd."
 #property link      "https://www.mql4.com"
@@ -40,6 +40,7 @@
 #define POSITION_TP            106
 #define POSITION_PROFIT        107
 #define POSITION_SWAP          108
+#define POSITION_TIME          109   // OrderOpenTime()
 
 #define ORDER_SYMBOL           201
 #define ORDER_VOLUME_CURRENT   202
@@ -99,6 +100,7 @@ double PositionGetDouble(int prop)
 
 long PositionGetInteger(int prop)
 {
+   if(prop == POSITION_TIME) return (long)OrderOpenTime();
    if(prop == POSITION_TYPE)
    {
       int t = OrderType();
@@ -749,6 +751,7 @@ color GetBtnNormalColor(string name)
    if(name == "RM_BtnDMX") return g_dailyMtxActive ? CLR_BTN_ON : CLR_BTN_OFF;
    if(name == "RM_BtnWMX") return g_weeklyMtxActive ? CLR_BTN_ON : CLR_BTN_OFF;
    if(name == "RM_BtnD150") return g_daily150Active ? CLR_BTN_ON : CLR_BTN_OFF;
+   if(name == "RM_BtnDisarm") return g_linesActive ? CLR_BTN_WARN : CLR_BTN_OFF;
    if(name == "RM_BtnStalk")
    {
       int bm = BridgeMode();
@@ -854,6 +857,7 @@ color GetBtnHoverColor(string name)
    if(name == "RM_BtnDMX") return g_dailyMtxActive ? CLR_BTN_ON_HOVER : CLR_BTN_OFF_HOVER;
    if(name == "RM_BtnWMX") return g_weeklyMtxActive ? CLR_BTN_ON_HOVER : CLR_BTN_OFF_HOVER;
    if(name == "RM_BtnD150") return g_daily150Active ? CLR_BTN_ON_HOVER : CLR_BTN_OFF_HOVER;
+   if(name == "RM_BtnDisarm") return g_linesActive ? CLR_BTN_WARN_HOVER : CLR_BTN_OFF_HOVER;
    if(name == "RM_BtnStalk")
    {
       int bmh = BridgeMode();
@@ -1026,6 +1030,13 @@ void BuildDashboard()
    ObjectSetString(0, "RM_BtnStalk", OBJPROP_TOOLTIP,
       "Stalking mode\nOFF: bridge posts on each M5 close\nON: posts on each M1 close"
       "\n(a position or armed order overrides both and posts every few seconds)");
+
+   // DISARM. Right-aligned so it sits in the same place regardless of how
+   // wide the plan text runs. Lit only when there is something to drop.
+   CreateButton("RM_BtnDisarm", x + panelW - UI(84), y - 3 - UI(30), UI(80), UI(26), "DISARM",
+                GetBtnNormalColor("RM_BtnDisarm"), CLR_TEXT, FONT_SIZE_LBL);
+   ObjectSetString(0, "RM_BtnDisarm", OBJPROP_TOOLTIP,
+      "Drop the armed setup and delete its entry/SL/TP lines\nHotkey: Esc");
 
    // Build + scale badge. Without this there is no way to tell from the chart
    // which build is actually running - "the updater said v6.02" describes the
@@ -9004,15 +9015,33 @@ void CheckHiddenOrder()
 //+------------------------------------------------------------------+
 //| Cancel all pending orders (all symbols) + armed hidden orders    |
 //+------------------------------------------------------------------+
+//+------------------------------------------------------------------+
+//| Disarm - drop the armed setup and its preview lines               |
+//|                                                                   |
+//| CancelAllOrders() used to clear the lines only when a HIDDEN order |
+//| was armed, so arming a normal setup and changing your mind left    |
+//| the entry/SL/TP lines on the chart with nothing behind them.       |
+//| Everything that abandons a setup now routes through here.          |
+//+------------------------------------------------------------------+
+bool DisarmSetup()
+{
+   bool had = g_linesActive || g_hiddenOrderArmed || g_autoOrderActive || g_chochOrderActive;
+   CancelHiddenOrder();
+   DeleteOrderLines();
+   g_linesActive      = false;
+   g_autoOrderActive  = false;
+   g_chochOrderActive = false;
+   g_lastOrderBtn     = "";
+   g_slManualOverride = false;
+   ClearInfoLabel();
+   RefreshDisarmBtn();
+   ChartRedraw(0);
+   return had;
+}
+
 void CancelAllOrders()
 {
-   if(g_hiddenOrderArmed)
-   {
-      CancelHiddenOrder();
-      DeleteOrderLines();
-      g_lastOrderBtn = "";
-      ClearInfoLabel();
-   }
+   DisarmSetup();
    for(int i = OrdersTotal() - 1; i >= 0; i--)
    {
       ulong ticket = OrderGetTicket(i);
@@ -9353,6 +9382,7 @@ string BuildStateJson()
 
    // ── open position summary (this symbol) ──
    double openLots = 0, openRisk = 0, openRew = 0;  int openCount = 0;
+   string posArr = "[";
    double tSz = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
    double tVl = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE);
    for(int i = PositionsTotal() - 1; i >= 0; i--)
@@ -9367,7 +9397,21 @@ string BuildStateJson()
       openLots += lot;  openCount++;
       if(sl != 0 && tSz > 0 && tVl > 0) openRisk += (MathAbs(ent - sl) / tSz) * tVl * lot;
       if(tp != 0 && tSz > 0 && tVl > 0) openRew  += (MathAbs(tp - ent) / tSz) * tVl * lot;
+
+      // Ticket-level detail so the web app can show a Trade tab and close
+      // positions individually, rather than only "close all".
+      if(posArr != "[") posArr += ",";
+      posArr += "{\"ticket\":" + IntegerToString((long)tk) +
+                ",\"type\":\"" + (PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY ? "buy" : "sell") + "\"" +
+                ",\"lots\":"   + JNum(lot, 2) +
+                ",\"open\":"   + JNum(ent, _Digits) +
+                ",\"sl\":"     + JNum(sl,  _Digits) +
+                ",\"tp\":"     + JNum(tp,  _Digits) +
+                ",\"profit\":" + JNum(PositionGetDouble(POSITION_PROFIT) +
+                                      PositionGetDouble(POSITION_SWAP), 2) +
+                ",\"openTime\":" + IntegerToString((long)PositionGetInteger(POSITION_TIME)) + "}";
    }
+   posArr += "]";
 
    double slDist = CalcSLDistance();
 
@@ -9472,7 +9516,8 @@ string BuildStateJson()
    j += "\"openCount\":" + IntegerToString(openCount) + ",";
    j += "\"openLots\":"  + JNum(openLots,2) + ",";
    j += "\"openRisk\":"  + JNum(openRisk,2) + ",";
-   j += "\"openReward\":"+ JNum(openRew,2);
+   j += "\"openReward\":"+ JNum(openRew,2) + ",";
+   j += "\"positions\":" + posArr;
    j += "},";
 
    // ── session counters (drive the plan's trade cap) ──
@@ -9531,6 +9576,18 @@ string BridgeModeName()
 
 // Called from OnTimer: the mode changes on its own when a position opens or
 // the last one closes, so the face has to follow without a click.
+// Armed state changes without a click - an order fills, a hidden order fires -
+// so the button has to follow rather than only repaint when pressed.
+void RefreshDisarmBtn()
+{
+   static int lastArmed = -1;
+   int nowArmed = g_linesActive ? 1 : 0;
+   if(nowArmed == lastArmed) return;
+   lastArmed = nowArmed;
+   if(ObjectFind(0, "RM_BtnDisarm") < 0) return;
+   ObjectSetInteger(0, "RM_BtnDisarm", OBJPROP_BGCOLOR, GetBtnNormalColor("RM_BtnDisarm"));
+}
+
 void RefreshStalkBtn()
 {
    static int lastShown = -1;
@@ -9773,11 +9830,7 @@ bool DispatchRemote(string action, string button, string body, string &note)
 
    if(action == "cancel")
    {
-      if(!g_linesActive) { note = "nothing armed"; return false; }
-      CancelHiddenOrder();
-      DeleteOrderLines();
-      g_linesActive = false;
-      ChartRedraw(0);
+      if(!DisarmSetup()) { note = "nothing armed"; return false; }
       note = "armed setup cancelled";
       return true;
    }
@@ -9795,6 +9848,15 @@ bool DispatchRemote(string action, string button, string body, string &note)
    }
 
    // ── management of live positions ──────────────────────────────
+   if(action == "closeTicket")
+   {
+      long tk = JsonGetInt(body, "ticket");
+      if(tk <= 0) { note = "ticket required"; return false; }
+      if(!g_trade.PositionClose((ulong)tk)) { note = "close failed for #" + IntegerToString(tk); return false; }
+      note = "closed #" + IntegerToString(tk);
+      return true;
+   }
+
    if(action == "moveBE")     { MoveAllSLToBreakeven(); note = "SL to entry on all positions"; return true; }
    if(action == "closeAll")   { CloseAllPositions(); note = "all positions closed"; return true; }
 
@@ -10508,6 +10570,10 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
       ExecuteTrade(); return;
    }
 
+   // Esc - disarm. Conventional, and it was unbound.
+   if(id == CHARTEVENT_KEYDOWN && lparam == 27 && !g_customRiskEditing && !g_splitEditing)
+   { DisarmSetup(); return; }
+
    if(id == CHARTEVENT_KEYDOWN && lparam == 88 && !g_customRiskEditing && !g_splitEditing)
    { ToggleDashboardVisibility(); return; }
 
@@ -11104,6 +11170,12 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
       if(sparam == "RM_BtnDMX") { ToggleDailyMtx(); ObjectSetInteger(0, sparam, OBJPROP_STATE, false); return; }
       if(sparam == "RM_BtnWMX") { ToggleWeeklyMtx(); ObjectSetInteger(0, sparam, OBJPROP_STATE, false); return; }
       if(sparam == "RM_BtnD150"){ ToggleDaily150(); ObjectSetInteger(0, sparam, OBJPROP_STATE, false); return; }
+      if(sparam == "RM_BtnDisarm")
+      {
+         if(!DisarmSetup()) Print("RiskManager: nothing armed to disarm.");
+         ObjectSetInteger(0, sparam, OBJPROP_STATE, false);
+         return;
+      }
       if(sparam == "RM_BtnStalk")
       {
          g_stalkMode = !g_stalkMode;
@@ -11227,6 +11299,7 @@ void OnTimer()
    // cancel matrices, the equity guards and the hidden trail. A stall here
    // delays a label; a stall there delays a stop.
    RefreshStalkBtn();    // keep the mode button honest
+   RefreshDisarmBtn();
    PostState();          // web bridge: cadence follows BridgeMode()
    PollCommands();       // web bridge: remote ARM commands (opt-in)
 

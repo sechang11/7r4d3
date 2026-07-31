@@ -158,6 +158,18 @@
       <h2 style="margin:0">Entry patterns</h2>
       <span class="desc">availability from the EA (<code>IsOrderBtnAvailable</code>) — never recomputed here</span>
       <div class="spacer"></div>
+  <!-- open positions across this account, MT5 Trade-tab style -->
+  <div class="card wide" id="posCard" style="margin-bottom:14px" hidden>
+    <div class="bucket-head" style="margin-bottom:10px">
+      <h2 style="margin:0">Open positions</h2>
+      <span class="desc" id="posScope"></span>
+      <div class="spacer"></div>
+      <span class="desc" id="posTotal"></span>
+    </div>
+    <div style="overflow-x:auto"><table class="ptbl" id="posTbl"></table></div>
+    <p class="desc" id="posNote" style="margin:9px 0 0"></p>
+  </div>
+
   <!-- trade controls: the same presets as the on-chart panel -->
   <div class="card wide" id="ctrlCard" style="margin-bottom:14px" hidden>
     <div class="bucket-head" style="margin-bottom:12px">

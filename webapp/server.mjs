@@ -35,7 +35,7 @@ const HOST = process.env.HOST ?? (ON_PAAS ? '0.0.0.0' : '127.0.0.1');
 
 // Contract version this server was built against. Compared to the EA's
 // RM_VERSION on every snapshot so a stale EA can't masquerade as live.
-const CONTRACT_VERSION = '6.08';
+const CONTRACT_VERSION = '6.09';
 
 // Shared secret guarding every /api/* route. Set RM_TOKEN in the environment
 // (never in source). Both the EA and the browser must present it.
@@ -116,6 +116,9 @@ const summarise = (key, e) => {
     drangePct:  s?.m15?.drangePct   ?? null,
     pnlSymbol:  s?.account?.pnlSymbol ?? null,
     openCount:  s?.exposure?.openCount ?? 0,
+    // Ticket detail, so the dashboard can assemble an account-wide Trade tab
+    // by merging every instance rather than asking each one separately.
+    positions:  Array.isArray(s?.exposure?.positions) ? s.exposure.positions : [],
     armed:      s?.armed?.active ? (s.armed.button ?? true) : null,
     available:  pats.filter((v) => v?.available).length,
     collision:  e.collision,
