@@ -47,6 +47,11 @@ const RM_TOKEN = process.env.RM_TOKEN ?? '';
 const DATA_DIR  = process.env.RM_DATA_DIR ?? path.join(__dirname, 'data');
 const PLAN_FILE = path.join(DATA_DIR, 'plan.json');
 const JOURNAL   = path.join(DATA_DIR, 'journal.jsonl');
+// Daily journal: one file per account, keyed by date. Separate from the
+// append-only command journal above - this one is edited.
+const JRNL_DIR    = path.join(DATA_DIR, 'journal');
+const SCHEMA_FILE = path.join(DATA_DIR, 'journal-schema.json');
+fs.mkdirSync(JRNL_DIR, { recursive: true });
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
 // ── fail-safe: never expose an unauthenticated API beyond loopback ──
@@ -187,6 +192,96 @@ const appendJournal = (entry) => {
   }
 };
 
+// ── daily journal ──────────────────────────────────────────────────
+const DEFAULT_SCHEMA = path.join(__dirname, 'journal-schema.json');
+
+const readSchema = () => {
+  // A schema saved through the API wins; otherwise fall back to the one that
+  // ships with the app, so a fresh deploy is never without columns.
+  for (const f of [SCHEMA_FILE, DEFAULT_SCHEMA]) {
+    try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { /* next */ }
+  }
+  return { symbols: [], groups: [], perSymbol: [] };
+};
+
+const journalPath = (login) => path.join(JRNL_DIR, String(login).replace(/[^\w.-]/g, '_') + '.json');
+
+const loadJournalFile = (login) => {
+  try { return JSON.parse(fs.readFileSync(journalPath(login), 'utf8')); } catch { return {}; }
+};
+const saveJournalFile = (login, obj) =>
+  fs.writeFileSync(journalPath(login), JSON.stringify(obj, null, 2));
+
+/** Merge one level deeper than Object.assign, so a symbol patch keeps its siblings. */
+const deepMerge = (base, patch) => {
+  const out = { ...base };
+  for (const [k, v] of Object.entries(patch ?? {})) {
+    out[k] = (v && typeof v === 'object' && !Array.isArray(v))
+      ? { ...(out[k] ?? {}), ...v }
+      : v;
+  }
+  return out;
+};
+
+const isoDay = (d) => new Date(d).toISOString().slice(0, 10);
+
+/** The last `days` calendar days, newest first, each with whatever was saved. */
+const readJournal = (login, days) => {
+  const saved = loadJournalFile(login);
+  const out = [];
+  const today = new Date(); today.setHours(12, 0, 0, 0);
+  for (let i = 0; i < days; i++) {
+    const d = new Date(today); d.setDate(d.getDate() - i);
+    const key = isoDay(d);
+    out.push({ date: key, dow: d.getDay(), ...(saved[key] ?? {}) });
+  }
+  return out;
+};
+
+const dotGet = (obj, dotted) =>
+  String(dotted).split('.').reduce((o, k) => (o == null ? undefined : o[k]), obj);
+
+/**
+ * Fill the schema's `auto` fields for today from whatever the EAs are currently
+ * reporting. Called when a client loads the journal, so the row fills itself as
+ * the session runs rather than needing a separate scheduler.
+ */
+const captureAuto = () => {
+  const schema = readSchema();
+  const defs = schema?.auto?.perSymbol ?? [];
+  if (defs.length === 0) return;
+
+  const today = isoDay(new Date());
+  const byLogin = new Map();
+  for (const [, e] of instances) {
+    const login = e.state?.account?.login;
+    const sym   = e.state?.symbol;
+    if (login == null || !sym) continue;
+    if (!byLogin.has(login)) byLogin.set(login, {});
+    for (const def of defs) {
+      let v = dotGet(e.state, def.from);
+      if (v == null) continue;
+      if (def.map)  v = def.map[String(v)] ?? v;
+      if (def.round != null && typeof v === 'number') v = Number(v.toFixed(def.round));
+      // Match a reported symbol to a schema column: US500.sim -> ES needs the
+      // alias table below; a plain prefix match covers XAUUSD -> XAU etc.
+      const col = (schema.symbols ?? []).find((c) =>
+        sym === c || sym.toUpperCase().startsWith(c.toUpperCase()) ||
+        (schema.aliases?.[c] ?? []).includes(sym));
+      if (!col) continue;
+      byLogin.get(login)[col] = { ...(byLogin.get(login)[col] ?? {}), [def.key]: v };
+    }
+  }
+
+  for (const [login, patch] of byLogin) {
+    if (Object.keys(patch).length === 0) continue;
+    const all = loadJournalFile(login);
+    all[today] = deepMerge(all[today] ?? {}, patch);
+    all[today].autoAt = Date.now();
+    saveJournalFile(login, all);
+  }
+};
+
 // ── EA source distribution ─────────────────────────────────────────
 // Lets a client pull the current .mq5 / .mq4 from the running bridge,
 // save it into MQL5/Experts and recompile. The files ship in the image
@@ -275,6 +370,11 @@ const server = http.createServer(async (req, res) => {
       const meta = sourceMeta();
       return send(res, 200, {
         ok: true,
+        // The journal lives on disk. On a PaaS the app directory is wiped on
+        // every redeploy, so surface where it is going and whether that is a
+        // mounted volume - losing a month of journal to a deploy is silent.
+        dataDir: DATA_DIR,
+        dataPersistent: !ON_PAAS || Boolean(process.env.RM_DATA_DIR),
         contractVersion: CONTRACT_VERSION,
         authRequired: Boolean(RM_TOKEN),
         uptimeSec: Math.round(process.uptime()),
@@ -390,6 +490,44 @@ const server = http.createServer(async (req, res) => {
       commands.push(cmd);
       appendJournal({ type: 'command_queued', id: cmd.id, target, action, params });
       return send(res, 200, { ok: true, id: cmd.id });
+    }
+
+    // ---- daily journal --------------------------------------------
+    // Schema-driven on purpose: the columns are defined in journal-schema.json,
+    // so adding a field the EA fills is a data change, not a code change.
+    if (p === '/api/journal/schema' && req.method === 'GET') {
+      return send(res, 200, { schema: readSchema() });
+    }
+    if (p === '/api/journal/schema' && req.method === 'PUT') {
+      try {
+        const next = JSON.parse(await readBody(req));
+        if (!next || typeof next !== 'object') return send(res, 400, { error: 'object required' });
+        fs.writeFileSync(SCHEMA_FILE, JSON.stringify(next, null, 2));
+        return send(res, 200, { ok: true, schema: next });
+      } catch (e) { return send(res, 400, { error: e.message }); }
+    }
+
+    if (p === '/api/journal' && req.method === 'GET') {
+      const login = url.searchParams.get('login') ?? 'default';
+      const days  = Math.min(Number(url.searchParams.get('days')) || 70, 400);
+      captureAuto();
+      return send(res, 200, { login, schema: readSchema(), rows: readJournal(login, days) });
+    }
+
+    // One day at a time. The client sends only the cells it changed, so two
+    // tabs editing different columns cannot clobber each other's work.
+    if (p === '/api/journal' && req.method === 'PUT') {
+      try {
+        const { login = 'default', date, patch } = JSON.parse(await readBody(req));
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date ?? ''))) {
+          return send(res, 400, { error: 'date must be YYYY-MM-DD' });
+        }
+        const all = loadJournalFile(login);
+        all[date] = deepMerge(all[date] ?? {}, patch ?? {});
+        all[date].updatedAt = Date.now();
+        saveJournalFile(login, all);
+        return send(res, 200, { ok: true, date, row: all[date] });
+      } catch (e) { return send(res, 400, { error: e.message }); }
     }
 
     if (p === '/api/commands' && req.method === 'GET') {

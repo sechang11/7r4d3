@@ -158,63 +158,6 @@
       <h2 style="margin:0">Entry patterns</h2>
       <span class="desc">availability from the EA (<code>IsOrderBtnAvailable</code>) — never recomputed here</span>
       <div class="spacer"></div>
-  <!-- open positions across this account, MT5 Trade-tab style -->
-  <div class="card wide" id="posCard" style="margin-bottom:14px" hidden>
-    <div class="bucket-head" style="margin-bottom:10px">
-      <h2 style="margin:0">Open positions</h2>
-      <span class="desc" id="posScope"></span>
-      <div class="spacer"></div>
-      <span class="desc" id="posTotal"></span>
-    </div>
-    <div style="overflow-x:auto"><table class="ptbl" id="posTbl"></table></div>
-    <p class="desc" id="posNote" style="margin:9px 0 0"></p>
-  </div>
-
-  <!-- trade controls: the same presets as the on-chart panel -->
-  <div class="card wide" id="ctrlCard" style="margin-bottom:14px" hidden>
-    <div class="bucket-head" style="margin-bottom:12px">
-      <h2 style="margin:0">Trade controls</h2>
-      <span class="desc">changes apply to the EA immediately, and re-price any armed setup</span>
-      <div class="spacer"></div>
-      <span class="desc" id="ctrlMsg"></span>
-    </div>
-
-    <div class="ctrlRow"><span class="ctrlLbl">Risk</span><div class="ctrlSet" id="cRisk"></div>
-      <input id="cRiskCustom" type="number" min="1" step="50" placeholder="custom $">
-      <button class="ghost" id="cRiskSet">Set</button></div>
-
-    <div class="ctrlRow"><span class="ctrlLbl">SL range</span><div class="ctrlSet" id="cSlPct"></div></div>
-    <div class="ctrlRow"><span class="ctrlLbl">R:R</span><div class="ctrlSet" id="cRR"></div></div>
-    <div class="ctrlRow"><span class="ctrlLbl">Split</span><div class="ctrlSet" id="cSplit"></div></div>
-    <div class="ctrlRow"><span class="ctrlLbl">Hidden</span><div class="ctrlSet" id="cHidden"></div></div>
-
-    <div class="ctrlRow" style="border-top:1px solid var(--border);padding-top:11px;margin-top:4px">
-      <span class="ctrlLbl">Armed</span>
-      <div class="ctrlSet" id="cArmed"><span class="mute">nothing armed</span></div>
-    </div>
-
-    <div class="bucket-head" style="margin:16px 0 10px">
-      <h2 style="margin:0">Position management</h2>
-      <span class="desc">acts on every open position for this symbol</span>
-    </div>
-    <div class="ctrlRow"><span class="ctrlLbl">Close</span><div class="ctrlSet" id="cClose"></div></div>
-    <div class="ctrlRow"><span class="ctrlLbl">Stops</span>
-      <div class="ctrlSet">
-        <button class="ghost" id="cMoveBE">Move to BE</button>
-        <input id="cSlPrice" type="number" step="any" placeholder="SL price">
-        <button class="ghost" id="cSetSL">Set SL</button>
-        <input id="cTpPrice" type="number" step="any" placeholder="TP price">
-        <button class="ghost" id="cSetTP">Set TP</button>
-      </div>
-    </div>
-    <p class="desc" style="margin:10px 0 0">
-      Set&nbsp;SL / Set&nbsp;TP take a price because the on-chart versions work by
-      dragging a line, and there is no chart here to drag on. The matrices
-      (Exit / Partials / BE / Cancel) and the trail buttons are drag-based too —
-      still chart-only for now.
-    </p>
-  </div>
-
       <div class="arm" id="armBox">
         <span class="note" id="armNote">remote commands disarmed</span>
         <button id="armBtn">ARM REMOTE</button>
@@ -288,6 +231,85 @@
     <div class="desc" id="srcMsg"></div>
   </div>
 
+  <!-- daily journal -->
+  <div class="card wide" id="jrnlCard" style="margin-bottom:14px">
+    <div class="bucket-head" style="margin-bottom:10px">
+      <h2 style="margin:0">Journal</h2>
+      <span class="desc">one row per day · edit any cell · scroll sideways for symbols</span>
+      <div class="spacer"></div>
+      <label class="chk" style="font-size:12px">
+        <input type="checkbox" id="jrnlHideEmpty"> hide days with nothing in them
+      </label>
+      <button class="ghost" id="jrnlToggle">Show</button>
+      <span class="desc" id="jrnlMsg"></span>
+    </div>
+    <div id="jrnlWrap" hidden>
+      <div class="jrnlScroll"><table class="jtbl" id="jrnlTbl"></table></div>
+      <p class="desc" style="margin:9px 0 0">
+        Columns come from <code>journal-schema.json</code> — add a field there and it
+        appears here, in storage and in the auto-capture without a code change.
+        Auto columns are filled from what the EAs are reporting and are shown dimmed.
+      </p>
+    </div>
+  </div>
+
+  <!-- open positions across this account, MT5 Trade-tab style -->
+  <div class="card wide" id="posCard" style="margin-bottom:14px" hidden>
+    <div class="bucket-head" style="margin-bottom:10px">
+      <h2 style="margin:0">Open positions</h2>
+      <span class="desc" id="posScope"></span>
+      <div class="spacer"></div>
+      <span class="desc" id="posTotal"></span>
+    </div>
+    <div style="overflow-x:auto"><table class="ptbl" id="posTbl"></table></div>
+    <p class="desc" id="posNote" style="margin:9px 0 0"></p>
+  </div>
+
+  <!-- trade controls: the same presets as the on-chart panel -->
+  <div class="card wide" id="ctrlCard" style="margin-bottom:14px" hidden>
+    <div class="bucket-head" style="margin-bottom:12px">
+      <h2 style="margin:0">Trade controls</h2>
+      <span class="desc">changes apply to the EA immediately, and re-price any armed setup</span>
+      <div class="spacer"></div>
+      <span class="desc" id="ctrlMsg"></span>
+    </div>
+
+    <div class="ctrlRow"><span class="ctrlLbl">Risk</span><div class="ctrlSet" id="cRisk"></div>
+      <input id="cRiskCustom" type="number" min="1" step="50" placeholder="custom $">
+      <button class="ghost" id="cRiskSet">Set</button></div>
+
+    <div class="ctrlRow"><span class="ctrlLbl">SL range</span><div class="ctrlSet" id="cSlPct"></div></div>
+    <div class="ctrlRow"><span class="ctrlLbl">R:R</span><div class="ctrlSet" id="cRR"></div></div>
+    <div class="ctrlRow"><span class="ctrlLbl">Split</span><div class="ctrlSet" id="cSplit"></div></div>
+    <div class="ctrlRow"><span class="ctrlLbl">Hidden</span><div class="ctrlSet" id="cHidden"></div></div>
+
+    <div class="ctrlRow" style="border-top:1px solid var(--border);padding-top:11px;margin-top:4px">
+      <span class="ctrlLbl">Armed</span>
+      <div class="ctrlSet" id="cArmed"><span class="mute">nothing armed</span></div>
+    </div>
+
+    <div class="bucket-head" style="margin:16px 0 10px">
+      <h2 style="margin:0">Position management</h2>
+      <span class="desc">acts on every open position for this symbol</span>
+    </div>
+    <div class="ctrlRow"><span class="ctrlLbl">Close</span><div class="ctrlSet" id="cClose"></div></div>
+    <div class="ctrlRow"><span class="ctrlLbl">Stops</span>
+      <div class="ctrlSet">
+        <button class="ghost" id="cMoveBE">Move to BE</button>
+        <input id="cSlPrice" type="number" step="any" placeholder="SL price">
+        <button class="ghost" id="cSetSL">Set SL</button>
+        <input id="cTpPrice" type="number" step="any" placeholder="TP price">
+        <button class="ghost" id="cSetTP">Set TP</button>
+      </div>
+    </div>
+    <p class="desc" style="margin:10px 0 0">
+      Set&nbsp;SL / Set&nbsp;TP take a price because the on-chart versions work by
+      dragging a line, and there is no chart here to drag on. The matrices
+      (Exit / Partials / BE / Cancel) and the trail buttons are drag-based too —
+      still chart-only for now.
+    </p>
+  </div>
+
   <footer>
     EA is the single source of truth — this page renders its state and never recomputes it.
     Contract <code id="ctrVer">—</code> · see <code>TRADING_SYSTEM.md</code>
@@ -295,5 +317,6 @@
 
   <script src="/plan.js"></script>
   <script src="/app.js"></script>
+  <script src="/journal.js"></script>
 </body>
 </html>

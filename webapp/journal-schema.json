@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "note": "Column definitions for the daily journal. Edit this — or PUT /api/journal/schema — to change what is tracked. The table, the storage and the auto-capture all read from here, so nothing needs a code change to add a field.",
+
+  "symbols": ["ES", "NQ", "DXY", "EUR", "GBP", "CAD", "XAU", "XAG", "BTC", "ETH"],
+
+  "weekendSymbols": ["BTC", "ETH"],
+
+  "groups": [
+    {
+      "key": "habits",
+      "label": "Habits",
+      "fields": [
+        { "key": "sleep",      "label": "Sleep",      "type": "score" },
+        { "key": "fuel",       "label": "Fuel",       "type": "score" },
+        { "key": "exercise",   "label": "Exercise",   "type": "score" },
+        { "key": "discipline", "label": "Discipline", "type": "score" }
+      ]
+    },
+    {
+      "key": "trade",
+      "label": "Trade",
+      "fields": [
+        { "key": "forced",         "label": "Forced?",         "type": "tf" },
+        { "key": "reacted",        "label": "Reacted?",        "type": "tf" },
+        { "key": "overleveraged",  "label": "Overleveraged?",  "type": "tf" },
+        { "key": "homerun",        "label": "Homerun?",        "type": "tf" },
+        { "key": "stance",         "label": "Stance",          "type": "enum",
+          "options": ["Offense", "Neutral", "Defense", "Defended"] },
+        { "key": "result",         "label": "Result",          "type": "number" }
+      ]
+    }
+  ],
+
+  "perSymbol": [
+    { "key": "t0",  "label": "T0:Type", "type": "text",  "width": 78,
+      "hint": "Day type / bias code, e.g. G, Y, B, G!, Yb, G!c, Y.G?" },
+    { "key": "x",   "label": "x:",      "type": "text",  "width": 52,
+      "hint": "Cross marker, e.g. xW, xMx" },
+    { "key": "p",   "label": "p:",      "type": "text",  "width": 56,
+      "hint": "Position / direction, e.g. u, d, i, di, ui, uo, do, ?" },
+    { "key": "t1",  "label": "T1",      "type": "text",  "width": 44 },
+    { "key": "t2",  "label": "T2",      "type": "text",  "width": 44 },
+    { "key": "t3",  "label": "T3",      "type": "text",  "width": 56,
+      "hint": "Internal / external pairing, e.g. ii, ie, ei, ee, eeb" },
+    { "key": "t4",  "label": "T4",      "type": "text",  "width": 56,
+      "hint": "Close code, e.g. pY, pG, pB, pGc" },
+    { "key": "r",   "label": "R",       "type": "text",  "width": 44,
+      "hint": "Result for this symbol" }
+  ],
+
+  "auto": {
+    "note": "Fields the EA can fill without you typing. `from` is a dot-path into the state snapshot the EA posts; `when` decides the moment it is captured. Nothing is auto today beyond these two — add entries here as the EA starts reporting more.",
+    "perSymbol": [
+      { "key": "autoTrend",  "label": "Trend",  "from": "m15.trend",      "when": "sessionOpen", "map": { "1": "up", "2": "dn" } },
+      { "key": "autoDrange", "label": "DR%",    "from": "m15.drangePct",  "when": "sessionOpen", "round": 0 }
+    ]
+  }
+}

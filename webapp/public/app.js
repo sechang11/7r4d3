@@ -64,6 +64,8 @@ async function api(path, opts = {}) {
   return res;
 }
 
+window.RMApi = api;   // journal.js reuses the same auth + error handling
+
 $('authSave').onclick = async () => {
   token = $('authInput').value.trim();
   localStorage.setItem(TOKEN_KEY, token);
@@ -664,6 +666,7 @@ function render(payload) {
   $('ctrVer').textContent = contractVersion;
 
   liveKey = payload.key ?? null;
+  if (window.RMJournal) window.RMJournal.setLogin(payload.state?.account?.login ?? 'default');
   lastRows = payload.instances ?? [];
   renderInstances(payload.instances, liveKey);
   // The chart we were pinned to disappeared (EA removed, terminal closed) —

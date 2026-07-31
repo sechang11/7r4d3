@@ -304,3 +304,37 @@ button.ghost:hover { color: #fff; }
 .ptbl tr:last-child td { border-bottom: none; }
 .ptbl td:last-child, .ptbl th:last-child { padding-right: 0; text-align: right; }
 .ptbl .pbtn { padding: 4px 12px; font-size: 12px; }
+
+/* ── journal ────────────────────────────────────────────── */
+.jrnlScroll { overflow: auto; max-height: 70vh; border: 1px solid var(--border); border-radius: 5px; }
+.jtbl { border-collapse: separate; border-spacing: 0; font-size: 12px; }
+.jtbl th {
+  position: sticky; top: 0; z-index: 3;
+  background: var(--section); color: var(--dim);
+  font-size: 10px; font-weight: 600; letter-spacing: .5px; text-transform: uppercase;
+  padding: 5px 6px; white-space: nowrap; border-bottom: 1px solid var(--border);
+  border-right: 1px solid var(--plc); text-align: left;
+}
+.jtbl thead tr:nth-child(2) th { top: 24px; z-index: 3; }
+.jtbl th.grp { text-align: center; background: var(--plc); color: var(--text); border-right: 2px solid var(--border); }
+.jtbl th.grp.sym { color: var(--gold); }
+.jtbl th.autoh   { color: var(--teal); }
+.jtbl td { padding: 2px 4px; border-bottom: 1px solid var(--plc); border-right: 1px solid var(--plc); }
+
+/* sticky left corner: week + date stay put while symbols scroll past */
+.jtbl .stick  { position: sticky; left: 0;    z-index: 4; background: var(--section); width: 44px; }
+.jtbl .stick2 { position: sticky; left: 44px; z-index: 4; background: var(--section); width: 62px; white-space: nowrap; }
+.jtbl thead .stick, .jtbl thead .stick2, .jtbl th.corner { z-index: 5; }
+.jtbl .dow { color: var(--dim); margin-left: 5px; font-size: 10px; }
+.jtbl tr.wknd .stick2 { color: var(--dim); }
+.jtbl td.closed { background: repeating-linear-gradient(45deg, transparent, transparent 4px, var(--plc) 4px, var(--plc) 8px); }
+.jtbl td.auto   { color: var(--teal); font-variant-numeric: tabular-nums; padding: 4px 6px; white-space: nowrap; }
+
+.jcell {
+  width: 58px; margin: 0; padding: 3px 5px; font-size: 12px;
+  background: transparent; color: var(--text);
+  border: 1px solid transparent; border-radius: 3px;
+}
+.jcell:hover { border-color: var(--border); }
+.jcell:focus { outline: none; border-color: var(--on); background: var(--bg); }
+select.jcell { width: 74px; }
