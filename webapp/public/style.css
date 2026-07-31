@@ -185,8 +185,28 @@ button.ghost:hover { color: #fff; }
   border-radius: 6px; padding: 12px 15px; margin-bottom: 14px;
 }
 .instAcct {
+  display: flex; align-items: baseline; gap: 7px; cursor: pointer;
   color: var(--dim); font-size: 11px; letter-spacing: .8px;
-  text-transform: uppercase; margin: 6px 0 6px; font-weight: 600;
+  text-transform: uppercase; margin: 10px 0 7px; font-weight: 600;
+  padding: 5px 8px; border-radius: 4px; background: var(--plc);
+  user-select: none;
+}
+.instAcct:hover { color: #fff; }
+.instAcct .caret    { font-size: 9px; width: 10px; }
+.instAcct .acctName { color: var(--text); letter-spacing: .6px; }
+.instAcct .acctTags { margin-left: auto; text-transform: none; letter-spacing: 0; }
+.warn { color: #ffcf6b; }
+
+.idot {
+  display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+  margin-right: 6px; vertical-align: middle;
+}
+.idot.on  { background: #00e07a; box-shadow: 0 0 6px #00e07a; }
+.idot.off { background: var(--sell); }
+.armFlag {
+  margin-left: 6px; font-size: 9px; font-weight: 700; letter-spacing: .5px;
+  background: var(--warn); color: #1a1206; padding: 1px 5px; border-radius: 3px;
+  vertical-align: middle;
 }
 .instStrip { display: flex; flex-wrap: wrap; gap: 8px; }
 .inst {

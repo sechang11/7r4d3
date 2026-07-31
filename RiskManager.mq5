@@ -3,7 +3,7 @@
 //|                                  Copyright 2026, MetaQuotes Ltd. |
 //|                                             https://www.mql5.com |
 //+------------------------------------------------------------------+
-#define RM_VERSION "6.04"
+#define RM_VERSION "6.05"
 
 #property copyright "Copyright 2026, MetaQuotes Ltd."
 #property link      "https://www.mql5.com"
@@ -57,6 +57,17 @@ double g_uiScale = 1.0;
 
 int UI(const int px) { return (int)MathRound(px * g_uiScale); }
 
+// Fonts scale with the panel, but with a floor. Below about 7pt the labels
+// stop being readable, and an unreadable dashboard is worse than one slightly
+// out of proportion. Applied inside CreateButton/CreateLabel so it reaches
+// every call site, including the many that pass a bare 12 rather than
+// FONT_SIZE - which is why the text stayed put when the panel shrank.
+int UIFont(const int pt)
+{
+   int v = (int)MathRound(pt * g_uiScale);
+   return (v < 7 ? 7 : v);
+}
+
 // Called on init and on every chart resize. Clamped at both ends: below ~0.55
 // the text stops being legible, and above ~1.6 the panel starts eating the
 // chart it is supposed to sit beside.
@@ -85,10 +96,10 @@ void UpdateUiScale()
 #define ROW_GAP         UI(6)
 #define SECTION_GAP     UI(12)
 #define LABEL_H         UI(24)
-#define FONT_SIZE       UI(12)
-#define FONT_SIZE_LBL   UI(10)
-#define FONT_SIZE_INFO  UI(20)
-#define FONT_SIZE_INFO2 UI(13)
+#define FONT_SIZE       12
+#define FONT_SIZE_LBL   10
+#define FONT_SIZE_INFO  20
+#define FONT_SIZE_INFO2 13
 // Price-line thickness is a chart-drawing concern, not a panel one, so it
 // stays fixed - a scaled 2px SL line is harder to see, not more proportional.
 #define LINE_WIDTH      4
@@ -668,7 +679,7 @@ void CreateButton(string name, int x, int y, int w, int h,
    ObjectSetInteger(0, name, OBJPROP_YSIZE, h);
    ObjectSetString(0, name, OBJPROP_TEXT, text);
    ObjectSetString(0, name, OBJPROP_FONT, "Segoe UI Semibold");
-   ObjectSetInteger(0, name, OBJPROP_FONTSIZE, fontSize);
+   ObjectSetInteger(0, name, OBJPROP_FONTSIZE, UIFont(fontSize));
    ObjectSetInteger(0, name, OBJPROP_COLOR, txtClr);
    ObjectSetInteger(0, name, OBJPROP_BGCOLOR, bgClr);
    ObjectSetInteger(0, name, OBJPROP_BORDER_COLOR, CLR_BORDER);
@@ -690,7 +701,7 @@ void CreateLabel(string name, int x, int y, string text, color clr, int fontSize
    ObjectSetInteger(0, name, OBJPROP_YDISTANCE, y);
    ObjectSetString(0, name, OBJPROP_TEXT, text);
    ObjectSetString(0, name, OBJPROP_FONT, "Segoe UI");
-   ObjectSetInteger(0, name, OBJPROP_FONTSIZE, fontSize);
+   ObjectSetInteger(0, name, OBJPROP_FONTSIZE, UIFont(fontSize));
    ObjectSetInteger(0, name, OBJPROP_COLOR, clr);
    ObjectSetInteger(0, name, OBJPROP_CORNER, CORNER_LEFT_UPPER);
    ObjectSetInteger(0, name, OBJPROP_ZORDER, 100);

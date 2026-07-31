@@ -308,14 +308,30 @@ $('armBtn').onclick = () => {
   remoteArmed = !remoteArmed;
   $('armBox').className = 'arm' + (remoteArmed ? ' on' : '');
   $('armBtn').textContent = remoteArmed ? 'DISARM' : 'ARM REMOTE';
+  // Name the target. With several clients and ten symbols each, "clicking a
+  // pattern queues a command" is not enough to know where the order lands.
+  const where = lastState?.symbol ? ` on ${lastState.symbol}` : '';
   $('armNote').textContent = remoteArmed
-    ? 'remote armed — clicking a pattern queues a command'
+    ? `remote armed${where} — clicking a pattern queues a command`
     : 'remote commands disarmed';
 };
 
 // ── instance strip ──────────────────────────────────────────────────
-// One card per live EA. With ten charts posting, this is the only way to know
-// which symbol the detail view below is actually describing.
+// One card per live EA, grouped by client. With ten charts per terminal and
+// several terminals, this is the only way to know which symbol the detail
+// view below is actually describing — and which one an ARM would land on.
+const COLLAPSE_KEY = 'rm_collapsed';
+const readCollapsed = () => {
+  try { return new Set(JSON.parse(localStorage.getItem(COLLAPSE_KEY) ?? '[]')); }
+  catch { return new Set(); }
+};
+const isCollapsed = (login) => readCollapsed().has(String(login));
+const toggleCollapsed = (login) => {
+  const s = readCollapsed(), k = String(login);
+  if (s.has(k)) s.delete(k); else s.add(k);
+  localStorage.setItem(COLLAPSE_KEY, JSON.stringify([...s]));
+};
+
 function renderInstances(rows, servedKey) {
   const bar = $('instBar'), list = $('instList');
   if (!rows || rows.length === 0) { bar.hidden = true; return; }
@@ -331,13 +347,34 @@ function renderInstances(rows, servedKey) {
 
   list.replaceChildren();
   for (const [login, group] of byLogin) {
-    if (byLogin.size > 1 || login !== null) {
-      const h = document.createElement('div');
-      h.className = 'instAcct';
-      const srv = group.find((g) => g.server)?.server;
-      h.textContent = `${login ?? 'unknown account'}${srv ? ' · ' + srv : ''}`;
-      list.appendChild(h);
-    }
+    const online  = group.filter((g) => !g.stale).length;
+    const armed   = group.filter((g) => g.armed).length;
+    const openSum = group.reduce((a, g) => a + (g.openCount ?? 0), 0);
+    const pnlSum  = group.reduce((a, g) => a + (g.pnlSymbol ?? 0), 0);
+    // Collapse state is per client and remembered, so a ten-symbol terminal you
+    // aren't trading doesn't push the one you are off the screen.
+    const collapsed = isCollapsed(login);
+
+    const h = document.createElement('div');
+    h.className = 'instAcct' + (collapsed ? ' collapsed' : '');
+    const srv = group.find((g) => g.server)?.server;
+    h.innerHTML =
+      `<span class="caret">${collapsed ? '▶' : '▼'}</span>` +
+      `<span class="acctName">${login ?? 'unknown client'}</span>` +
+      (srv ? `<span class="mute"> · ${srv}</span>` : '') +
+      `<span class="acctTags">` +
+        `<span class="${online === group.length ? 'up' : online ? 'warn' : 'down'}">` +
+          `${online}/${group.length} online</span>` +
+        `<span class="mute"> · ${openSum} open</span>` +
+        (armed ? `<span class="warn"> · ${armed} armed</span>` : '') +
+        `<span class="${pnlSum > 0 ? 'up' : pnlSum < 0 ? 'down' : 'mute'}"> · ` +
+          `${pnlSum >= 0 ? '+' : ''}${pnlSum.toFixed(2)}</span>` +
+      `</span>`;
+    h.onclick = () => { toggleCollapsed(login); renderInstances(rows, servedKey); };
+    list.appendChild(h);
+
+    if (collapsed) continue;
+
     const strip = document.createElement('div');
     strip.className = 'instStrip';
     for (const r of group) {
@@ -346,7 +383,8 @@ function renderInstances(rows, servedKey) {
       el.className = 'inst' + (r.key === servedKey ? ' sel' : '') +
                      (r.stale ? ' stale' : '') + (r.collision ? ' clash' : '');
       el.innerHTML =
-        `<div class="instSym">${r.symbol ?? '—'}</div>` +
+        `<div class="instSym"><span class="idot ${r.stale ? 'off' : 'on'}"></span>` +
+        `${r.symbol ?? '—'}${r.armed ? '<span class="armFlag">ARMED</span>' : ''}</div>` +
         `<div class="instMeta"><span class="${tCls}">${tTxt}</span>` +
         `<span class="mute"> · ${r.drangePct != null ? r.drangePct.toFixed(0) + '% DR' : '—'}</span></div>` +
         `<div class="instMeta"><span class="${r.pnlSymbol > 0 ? 'up' : r.pnlSymbol < 0 ? 'down' : 'mute'}">` +
