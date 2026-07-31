@@ -30,6 +30,14 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+
+# Railway (and most hosts now) refuse TLS 1.0/1.1. PowerShell 5.1 takes the OS
+# default, so pin 1.2 explicitly or the first HTTPS call on a fresh machine
+# fails in a way that looks like a hang.
+try {
+  [Net.ServicePointManager]::SecurityProtocol =
+    [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+} catch { }
 $here       = Split-Path -Parent $MyInvocation.MyCommand.Path
 $configPath = Join-Path $here 'updater.config.json'
 # $markerPath and $eaName are resolved after the config is read - the marker is
@@ -318,7 +326,7 @@ if (-not $NoSelfUpdate -and $all.ps1 -and $all.ps1.available) {
     Say ''
     Say "  Updater itself is out of date ($mySha -> $($all.ps1.sha256)) - updating." 'Yellow'
     $tmpPs = Join-Path $env:TEMP 'Update-EA.new.ps1'
-    Invoke-WebRequest "$($cfg.bridgeUrl)/api/source/ps1" -Headers $headers -OutFile $tmpPs -TimeoutSec 60
+    Invoke-WebRequest "$($cfg.bridgeUrl)/api/source/ps1" -Headers $headers -UseBasicParsing -OutFile $tmpPs -TimeoutSec 60
     # Sanity-check before overwriting ourselves: a truncated or error-body
     # download must not be able to brick the updater.
     $err = $null
@@ -356,7 +364,7 @@ function Sync-Companion($key, $fileName) {
   if (Test-Path $dest) { $have = (Get-FileHash $dest -Algorithm SHA256).Hash.Substring(0, 12).ToLower() }
   if ($have -eq $all.$key.sha256) { return }
   try {
-    Invoke-WebRequest "$($cfg.bridgeUrl)/api/source/$key" -Headers $headers -OutFile $dest -TimeoutSec 60
+    Invoke-WebRequest "$($cfg.bridgeUrl)/api/source/$key" -Headers $headers -UseBasicParsing -OutFile $dest -TimeoutSec 60
     Say "  $(if ($have) { 'Updated' } else { 'Installed' }) $fileName" 'Green'
   } catch {
     # A running GUI holds its own .ps1 open; that is not worth failing over.
@@ -465,7 +473,7 @@ Say "  Backed up to $backupDir"
 # -- download -------------------------------------------------------
 Say '  Downloading...'
 $tmp = Join-Path $env:TEMP "RiskManager.$Platform.new"
-Invoke-WebRequest "$($cfg.bridgeUrl)/api/source/$Platform" -Headers $headers -OutFile $tmp -TimeoutSec 60
+Invoke-WebRequest "$($cfg.bridgeUrl)/api/source/$Platform" -Headers $headers -UseBasicParsing -OutFile $tmp -TimeoutSec 60
 if ((Get-Item $tmp).Length -lt 10000) { Die 'downloaded file is implausibly small - aborting' }
 Copy-Item $tmp $srcFile -Force
 Remove-Item $tmp -Force
@@ -523,7 +531,7 @@ if ($Platform -eq 'mq5') {
         if (Test-Path $tplPath) {
           Copy-Item $tplPath (Join-Path $backupDir "$stamp-default.tpl") -Force
         }
-        Invoke-WebRequest "$($cfg.bridgeUrl)/api/source/tpl" -Headers $headers -OutFile $tplPath -TimeoutSec 60
+        Invoke-WebRequest "$($cfg.bridgeUrl)/api/source/tpl" -Headers $headers -UseBasicParsing -OutFile $tplPath -TimeoutSec 60
         Say "  Installed default.tpl into $tplDir" 'Green'
       }
     }

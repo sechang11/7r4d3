@@ -262,12 +262,32 @@ function Invoke-Worker([string[]] $extraArgs) {
   # the moment one of them fills while we are blocked on the other.
   $errTask = $proc.StandardError.ReadToEndAsync()
 
+  # Watchdog. Without it a wedged worker leaves the banner on "Checking..."
+  # forever with no way to tell whether it is busy or dead.
+  $deadline = [Diagnostics.Stopwatch]::StartNew()
+  $limitSec = 180
+
   $result = $null
   while ($true) {
     # ReadLineAsync + pumping messages, so the window stays responsive through
     # the compile - which produces no output for several seconds.
     $t = $proc.StandardOutput.ReadLineAsync()
-    while (-not $t.Wait(50)) { [Windows.Forms.Application]::DoEvents() }
+    while (-not $t.Wait(50)) {
+      [Windows.Forms.Application]::DoEvents()
+      if ($deadline.Elapsed.TotalSeconds -gt $limitSec) {
+        try { $proc.Kill() } catch { }
+        Write-Log "  Gave up after ${limitSec}s - the bridge did not answer." $RED
+        Write-Log '  Check the bridgeUrl and token in updater.config.json, and that' $DIM
+        Write-Log '  this machine can reach the bridge over HTTPS.' $DIM
+        return [pscustomobject]@{
+          Code = -1
+          Result = [pscustomobject]@{
+            ok = $false; status = 'timeout'
+            message = "no response from the bridge after ${limitSec}s"
+          }
+        }
+      }
+    }
     $line = $t.Result
     if ($null -eq $line) { break }
     if ($line.StartsWith('##RESULT##')) {
