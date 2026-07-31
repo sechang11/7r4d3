@@ -4,9 +4,14 @@
 //|                                  Copyright 2026, MetaQuotes Ltd. |
 //|                                             https://www.mql4.com |
 //+------------------------------------------------------------------+
+#define RM_VERSION "6.04"
+
 #property copyright "Copyright 2026, MetaQuotes Ltd."
 #property link      "https://www.mql4.com"
-#property version   "6.00"
+// Drives BOTH the properties dialog and the state payload. These were two
+// separate literals and drifted three releases apart - the dialog still read
+// 6.00 while the EA reported 6.03 to the bridge.
+#property version   RM_VERSION
 #property strict
 
 // [MQL4 PORT] Original MQL5 includes commented out; replaced by the
@@ -239,7 +244,6 @@ input string InpDiscordWebhook = "";  // Discord Webhook URL
 //--- Web bridge (state export to the companion web app) -------------
 // RM_VERSION is stamped into every state POST so the web app can detect
 // a stale EA and refuse to present its data as live.
-#define RM_VERSION "6.03"
 
 input string InpBridgeURL    = "";   // Web bridge base URL, blank = OFF (e.g. http://127.0.0.1:8787)
 input string InpBridgeToken  = "";   // Bridge shared secret (must match RM_TOKEN on the server)
