@@ -394,3 +394,28 @@ Every matrix uses the same 3-condition OR pattern: `bid ≥ above`, `ask ≤ bel
 - **Placeholder buttons** with names matching `RM_Plc*`, `RM_RP_*`, `RM_TP_*`, `RM_AP_*` are reserved/non-functional UI slots.
 - The `_snippet.txt` file in the project directory is unrelated to this EA.
 - `DailyStalk.pine` and `ThrustStructure.pine` appear to be the Pine Script (TradingView) sources that the D.STK and Thrust systems were ported from.
+
+### Bridge cadence
+
+`WebRequest` is synchronous. Posting used to run from `OnTick` at a flat 3 s,
+which spent roughly **14% of every tick** on network I/O — on the same handler
+as the exit / partials / BE / cancel matrices, the equity guards and the hidden
+trail. Those calls now run from `OnTimer`, so a slow response delays a label
+rather than a stop.
+
+The interval follows what the chart is doing (`BridgeMode()`):
+
+| Mode | When | Posts |
+|---|---|---|
+| `ACTIVE` | position open, order armed, or any matrix live | every `InpStatePostSec` (5 s) |
+| `STALK` | you pressed **STALK** | on each **M1** close |
+| `IDLE` | flat and unattended — the default | on each **M5** close |
+
+Aligning the slow modes to candle closes rather than a rolling timer means a
+snapshot always describes a completed bar. A mode change posts immediately, so
+opening a position never waits five minutes to appear.
+
+The EA reports `mode` and `postSec` in the payload, and the server sizes its
+staleness window as `max(15 s, postSec × 2.5)`. Without that, an idle chart on
+M5 pacing would read as permanently offline — and an active chart is still held
+to the 15 s floor, because one missing its beat really is a fault.

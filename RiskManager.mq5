@@ -3,7 +3,7 @@
 //|                                  Copyright 2026, MetaQuotes Ltd. |
 //|                                             https://www.mql5.com |
 //+------------------------------------------------------------------+
-#define RM_VERSION "6.05"
+#define RM_VERSION "6.06"
 
 #property copyright "Copyright 2026, MetaQuotes Ltd."
 #property link      "https://www.mql5.com"
@@ -203,6 +203,10 @@ int    g_chochMode         = 0;      // 0=SL-range, 1=swing SL, toggled per clic
 int    g_bosLmtMode        = 0;      // 0=67% retrace, 1=extreme candle, toggled per click
 
 // Exit matrix
+// Stalking: you are watching this chart for a setup. Lifts the bridge from
+// M5-close posting to M1-close, without needing a position to exist yet.
+bool   g_stalkMode = false;
+
 bool   g_exitMatrixActive = false;
 string g_exitAboveName    = "RM_ExitAbove";
 string g_exitBelowName    = "RM_ExitBelow";
@@ -518,6 +522,7 @@ color GetBtnNormalColor(string name)
    if(name == "RM_BtnDMX") return g_dailyMtxActive ? CLR_BTN_ON : CLR_BTN_OFF;
    if(name == "RM_BtnWMX") return g_weeklyMtxActive ? CLR_BTN_ON : CLR_BTN_OFF;
    if(name == "RM_BtnD150") return g_daily150Active ? CLR_BTN_ON : CLR_BTN_OFF;
+   if(name == "RM_BtnStalk") return g_stalkMode ? CLR_BTN_WARN : CLR_BTN_OFF;
    if(name == "RM_BtnSGAP") return g_sessGapActive ? CLR_BTN_ON : CLR_BTN_OFF;
    if(name == "RM_BtnSBRK") return g_sessBrkActive ? CLR_BTN_ON : CLR_BTN_OFF;
    if(name == "RM_BtnDLVL") return g_dailyLvlActive ? CLR_BTN_ON : CLR_BTN_OFF;
@@ -617,6 +622,7 @@ color GetBtnHoverColor(string name)
    if(name == "RM_BtnDMX") return g_dailyMtxActive ? CLR_BTN_ON_HOVER : CLR_BTN_OFF_HOVER;
    if(name == "RM_BtnWMX") return g_weeklyMtxActive ? CLR_BTN_ON_HOVER : CLR_BTN_OFF_HOVER;
    if(name == "RM_BtnD150") return g_daily150Active ? CLR_BTN_ON_HOVER : CLR_BTN_OFF_HOVER;
+   if(name == "RM_BtnStalk") return g_stalkMode ? CLR_BTN_WARN_HOVER : CLR_BTN_OFF_HOVER;
    if(name == "RM_BtnSGAP") return g_sessGapActive ? CLR_BTN_ON_HOVER : CLR_BTN_OFF_HOVER;
    if(name == "RM_BtnSBRK") return g_sessBrkActive ? CLR_BTN_ON_HOVER : CLR_BTN_OFF_HOVER;
    if(name == "RM_BtnDLVL") return g_dailyLvlActive ? CLR_BTN_ON_HOVER : CLR_BTN_OFF_HOVER;
@@ -776,10 +782,18 @@ void BuildDashboard()
                 CLR_BTN_OFF, CLR_TEXT, FONT_SIZE_LBL);
    ObjectSetString(0, "RM_BtnHide", OBJPROP_TOOLTIP, "Toggle dashboard visibility (X key)");
 
+   // Stalk toggle. Bridge posting is deliberately lazy when a chart is flat
+   // and unattended; this is how you tell it you are actually watching.
+   CreateButton("RM_BtnStalk", x + UI(40), y - 3 - UI(30), UI(58), UI(26), "STALK",
+                g_stalkMode ? CLR_BTN_WARN : CLR_BTN_OFF, CLR_TEXT, FONT_SIZE_LBL);
+   ObjectSetString(0, "RM_BtnStalk", OBJPROP_TOOLTIP,
+      "Stalking mode\nOFF: bridge posts on each M5 close\nON: posts on each M1 close"
+      "\n(a position or armed order overrides both and posts every few seconds)");
+
    // Build + scale badge. Without this there is no way to tell from the chart
    // which build is actually running - "the updater said v6.02" describes the
    // file on disk, not the EA MetaTrader has loaded.
-   CreateLabel("RM_VerBadge", x + UI(44), y - 3 - UI(28),
+   CreateLabel("RM_VerBadge", x + UI(104), y - 3 - UI(28),
                "v" + RM_VERSION + "  \x2502  ui " + DoubleToString(g_uiScale, 2) + "x",
                CLR_TEXT_DIM, FONT_SIZE_LBL);
    ObjectSetString(0, "RM_VerBadge", OBJPROP_TOOLTIP,
@@ -789,7 +803,7 @@ void BuildDashboard()
       (InpUIScale > 0.05 ? " (fixed by InpUIScale)" : " (auto-fit)"));
 
    // Game-plan status, on the same row as the hide button
-   CreateLabel("RM_PlanLbl", x + UI(150), y - 3 - UI(28), "PLAN: \x2014", CLR_TEXT_DIM, FONT_SIZE_LBL);
+   CreateLabel("RM_PlanLbl", x + UI(212), y - 3 - UI(28), "PLAN: \x2014", CLR_TEXT_DIM, FONT_SIZE_LBL);
    ObjectSetString(0, "RM_PlanLbl", OBJPROP_TOOLTIP,
       "Session game plan pulled from the web app.\n"
       "Blocked patterns are greyed and refuse clicks.\n"
@@ -1479,6 +1493,7 @@ void ToggleDashboardVisibility()
       ObjectSetInteger(0, "RM_BtnDMX", OBJPROP_BGCOLOR, GetBtnNormalColor("RM_BtnDMX"));
       ObjectSetInteger(0, "RM_BtnWMX", OBJPROP_BGCOLOR, GetBtnNormalColor("RM_BtnWMX"));
       ObjectSetInteger(0, "RM_BtnD150",OBJPROP_BGCOLOR, GetBtnNormalColor("RM_BtnD150"));
+      ObjectSetInteger(0, "RM_BtnStalk",OBJPROP_BGCOLOR, GetBtnNormalColor("RM_BtnStalk"));
       ObjectSetInteger(0, "RM_BtnSGAP",OBJPROP_BGCOLOR, GetBtnNormalColor("RM_BtnSGAP"));
       ObjectSetInteger(0, "RM_BtnSBRK",OBJPROP_BGCOLOR, GetBtnNormalColor("RM_BtnSBRK"));
       ObjectSetInteger(0, "RM_BtnDLVL",OBJPROP_BGCOLOR, GetBtnNormalColor("RM_BtnDLVL"));
@@ -9235,6 +9250,8 @@ string BuildStateJson()
    j += "\"digits\":" + IntegerToString(dg) + ",";
    j += "\"chartTf\":" + IntegerToString((int)Period()) + ",";
    j += "\"chartId\":" + IntegerToString((long)ChartID()) + ",";
+   j += "\"mode\":" + IntegerToString(BridgeMode()) + ",";
+   j += "\"postSec\":" + IntegerToString(BridgePostSec()) + ",";
 
    j += "\"price\":{\"bid\":" + JNum(bid,dg) + ",\"ask\":" + JNum(ask,dg) + "},";
 
@@ -9344,12 +9361,81 @@ string BuildStateJson()
 //| POST the state snapshot. Throttled; short timeout so a dead      |
 //| endpoint can never stall the dashboard.                          |
 //+------------------------------------------------------------------+
+//+------------------------------------------------------------------+
+//| Bridge cadence                                                     |
+//|                                                                    |
+//| Posting used to run off every tick at a flat 3 s, which cost ~14%  |
+//| of OnTick to synchronous network I/O - on the same handler as the  |
+//| exit/partials/BE/cancel matrices and the equity guards. It now     |
+//| runs from OnTimer, and the interval follows what the chart is      |
+//| actually doing:                                                    |
+//|                                                                    |
+//|   ACTIVE  position open, order armed, or a matrix live  -> 5 s     |
+//|   STALK   you switched it on, watching for a setup      -> M1 close|
+//|   IDLE    flat and unattended (the default)             -> M5 close|
+//|                                                                    |
+//| Aligning the two slow modes to candle closes rather than a rolling |
+//| timer means a snapshot always describes a completed bar.           |
+//| A mode change posts immediately, so opening a position never waits |
+//| five minutes to show up.                                           |
+//+------------------------------------------------------------------+
+#define BRIDGE_IDLE   0
+#define BRIDGE_STALK  1
+#define BRIDGE_ACTIVE 2
+
+int BridgeMode()
+{
+   if(g_linesActive) return BRIDGE_ACTIVE;                 // an order is armed
+   if(g_exitMatrixActive || g_partialMatrixActive ||
+      g_beMtxActive      || g_cnclMtxActive) return BRIDGE_ACTIVE;
+
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
+   {
+      ulong tk = PositionGetTicket(i);
+      if(tk == 0) continue;
+      if(PositionGetString(POSITION_SYMBOL) == _Symbol) return BRIDGE_ACTIVE;
+   }
+   return (g_stalkMode ? BRIDGE_STALK : BRIDGE_IDLE);
+}
+
+// Seconds between posts for the current mode. Sent in the payload so the
+// server can size its staleness window instead of hard-coding 15 s - at M5
+// pacing a flat chart would otherwise read as permanently offline.
+int BridgePostSec()
+{
+   int m = BridgeMode();
+   if(m == BRIDGE_ACTIVE) return (InpStatePostSec < 1 ? 1 : InpStatePostSec);
+   return (m == BRIDGE_STALK ? 60 : 300);
+}
+
 void PostState()
 {
    if(InpBridgeURL == "") return;
-   static datetime lastPost = 0;
-   int gap = (InpStatePostSec < 1) ? 1 : InpStatePostSec;
-   if(TimeCurrent() - lastPost < gap) return;
+
+   static datetime lastPost   = 0;
+   static datetime lastM1     = 0;
+   static datetime lastM5     = 0;
+   static int      lastMode   = -1;
+
+   int      mode = BridgeMode();
+   datetime m1   = iTime(_Symbol, PERIOD_M1, 0);
+   datetime m5   = iTime(_Symbol, PERIOD_M5, 0);
+   bool     due  = false;
+
+   if(mode != lastMode)                         due = true;   // transition
+   else if(mode == BRIDGE_ACTIVE)
+   {
+      int gap = (InpStatePostSec < 1) ? 1 : InpStatePostSec;
+      due = (TimeCurrent() - lastPost >= gap);
+   }
+   else if(mode == BRIDGE_STALK)  due = (m1 != lastM1);
+   else                           due = (m5 != lastM5);
+
+   if(!due) return;
+
+   lastMode = mode;
+   lastM1   = m1;
+   lastM5   = m5;
    lastPost = TimeCurrent();
 
    string body = BuildStateJson();
@@ -10708,6 +10794,17 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
       if(sparam == "RM_BtnDMX") { ToggleDailyMtx(); ObjectSetInteger(0, sparam, OBJPROP_STATE, false); return; }
       if(sparam == "RM_BtnWMX") { ToggleWeeklyMtx(); ObjectSetInteger(0, sparam, OBJPROP_STATE, false); return; }
       if(sparam == "RM_BtnD150"){ ToggleDaily150(); ObjectSetInteger(0, sparam, OBJPROP_STATE, false); return; }
+      if(sparam == "RM_BtnStalk")
+      {
+         g_stalkMode = !g_stalkMode;
+         ObjectSetInteger(0, "RM_BtnStalk", OBJPROP_BGCOLOR, GetBtnNormalColor("RM_BtnStalk"));
+         ObjectSetInteger(0, sparam, OBJPROP_STATE, false);
+         // PostState() sees the mode change on the next timer tick and posts
+         // straight away, so the dashboard reflects the switch immediately
+         // rather than at the next M5 close.
+         ChartRedraw(0);
+         return;
+      }
       if(sparam == "RM_BtnSGAP"){ ToggleSessionGap(); ObjectSetInteger(0, sparam, OBJPROP_STATE, false); return; }
       if(sparam == "RM_BtnSBRK"){ ToggleSessionBreaker(); ObjectSetInteger(0, sparam, OBJPROP_STATE, false); return; }
       if(sparam == "RM_BtnDLVL"){ ToggleDailyLevels(); ObjectSetInteger(0, sparam, OBJPROP_STATE, false); return; }
@@ -10814,6 +10911,13 @@ void OnTick()
 //+------------------------------------------------------------------+
 void OnTimer()
 {
+   // Bridge calls live here, not in OnTick. WebRequest is synchronous and was
+   // costing ~14% of every tick - on the same handler as the exit/partials/BE/
+   // cancel matrices, the equity guards and the hidden trail. A stall here
+   // delays a label; a stall there delays a stop.
+   PostState();          // web bridge: cadence follows BridgeMode()
+   PollCommands();       // web bridge: remote ARM commands (opt-in)
+
    UpdateLiveInfo();
    UpdateOR();
    CheckSessionEnd();
@@ -10840,8 +10944,6 @@ void OnTimer()
    UpdateChochOrder();
    CheckSmartTPScore();
    CheckCTrendAlert();
-   PostState();          // web bridge: throttled state snapshot
-   PollCommands();       // web bridge: remote ARM commands (opt-in)
    FetchPlan();          // game plan: refresh cached copy
    ApplyPlanGating();    // game plan: grey blocked buttons + status line
 }

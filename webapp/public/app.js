@@ -320,6 +320,14 @@ $('armBtn').onclick = () => {
 // One card per live EA, grouped by client. With ten charts per terminal and
 // several terminals, this is the only way to know which symbol the detail
 // view below is actually describing — and which one an ARM would land on.
+const fmtAge = (ms) => {
+  if (ms == null) return '—';
+  const sec = Math.round(ms / 1000);
+  if (sec < 90) return sec + 's ago';
+  const min = Math.round(sec / 60);
+  return min < 90 ? min + 'm ago' : Math.round(min / 60) + 'h ago';
+};
+
 const COLLAPSE_KEY = 'rm_collapsed';
 const readCollapsed = () => {
   try { return new Set(JSON.parse(localStorage.getItem(COLLAPSE_KEY) ?? '[]')); }
@@ -390,7 +398,12 @@ function renderInstances(rows, servedKey) {
         `<div class="instMeta"><span class="${r.pnlSymbol > 0 ? 'up' : r.pnlSymbol < 0 ? 'down' : 'mute'}">` +
         `${r.pnlSymbol != null ? (r.pnlSymbol >= 0 ? '+' : '') + r.pnlSymbol.toFixed(2) : '—'}</span>` +
         `<span class="mute"> · ${r.openCount} open · ${r.available} avail</span></div>` +
-        (r.stale ? `<div class="instMeta down">stale ${Math.round(r.ageMs / 1000)}s</div>` : '') +
+        // Say which cadence it is on. An idle chart posting on M5 closes can be
+        // four minutes old and perfectly healthy, so "3m ago" alone reads as a
+        // problem when it isn't.
+        `<div class="instMeta"><span class="mode ${r.mode ?? ''}">${(r.mode ?? '—').toUpperCase()}</span>` +
+        `<span class="mute"> · ${fmtAge(r.ageMs)}</span></div>` +
+        (r.stale ? `<div class="instMeta down">no post for ${fmtAge(r.ageMs)}</div>` : '') +
         (r.versionMatch === false ? `<div class="instMeta down">v${r.eaVersion}</div>` : '');
       el.onclick = () => {
         selectedKey = r.key;

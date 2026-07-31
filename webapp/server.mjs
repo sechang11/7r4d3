@@ -35,7 +35,7 @@ const HOST = process.env.HOST ?? (ON_PAAS ? '0.0.0.0' : '127.0.0.1');
 
 // Contract version this server was built against. Compared to the EA's
 // RM_VERSION on every snapshot so a stale EA can't masquerade as live.
-const CONTRACT_VERSION = '6.05';
+const CONTRACT_VERSION = '6.06';
 
 // Shared secret guarding every /api/* route. Set RM_TOKEN in the environment
 // (never in source). Both the EA and the browser must present it.
@@ -86,6 +86,13 @@ const freshestKey = () => {
   return best;
 };
 
+// The EA paces itself: every few seconds when a position or armed order is
+// live, on each M1 close while stalking, on each M5 close when flat and
+// unattended. A fixed 15s window would therefore report every idle chart as
+// offline, so derive the window from the interval the EA reports.
+const MODE_NAME = ['idle', 'stalking', 'active'];
+const staleAfter = (s) => Math.max(STALE_MS, (Number(s?.postSec) || 3) * 1000 * 2.5);
+
 /** Compact per-instance row for the dashboard's selector. */
 const summarise = (key, e) => {
   const s = e.state, age = Date.now() - e.at;
@@ -99,7 +106,9 @@ const summarise = (key, e) => {
     eaVersion:  s?.v                ?? null,
     versionMatch: s?.v === CONTRACT_VERSION,
     ageMs:      age,
-    stale:      age >= STALE_MS,
+    stale:      age >= staleAfter(s),
+    postSec:    Number(s?.postSec) || null,
+    mode:       MODE_NAME[Number(s?.mode)] ?? null,
     price:      s?.price            ?? null,
     digits:     s?.digits           ?? 5,
     trend:      s?.m15?.trend       ?? null,
@@ -297,11 +306,11 @@ const server = http.createServer(async (req, res) => {
       // slot. Surface it rather than let them silently overwrite each other.
       let collision = prev?.collision ?? null;
       if (prev && cid !== null && prev.chartId !== null && prev.chartId !== cid) {
-        if (now - prev.at < STALE_MS) {
+        if (now - prev.at < staleAfter(prev.state)) {
           collision = { chartIds: [prev.chartId, cid], since: collision?.since ?? now };
           console.warn(`state collision on ${key}: charts ${prev.chartId} and ${cid}`);
         }
-      } else if (collision && now - (prev?.at ?? 0) >= STALE_MS) {
+      } else if (collision && now - (prev?.at ?? 0) >= staleAfter(prev?.state)) {
         collision = null;   // the other chart went away
       }
 
@@ -326,8 +335,8 @@ const server = http.createServer(async (req, res) => {
         instances: rows,
         key,
         keyMissing: Boolean(want) && !instances.has(want),
-        connected: e !== null && age < STALE_MS,
-        stale:     e !== null && age >= STALE_MS,
+        connected: e !== null && age < staleAfter(e?.state),
+        stale:     e !== null && age >= staleAfter(e?.state),
         ageMs:     age,
         eaVersion: e?.state?.v ?? null,
         versionMatch: e ? e.state.v === CONTRACT_VERSION : null,

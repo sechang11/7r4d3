@@ -253,3 +253,13 @@ button.ghost:hover { color: #fff; }
 .tile.plan  { border-color: var(--warn); opacity: .8; }
 .tile.plan .sub { color: #ffcf6b; }
 .pill.plan-on .dot { background: #00e07a; box-shadow: 0 0 8px #00e07a; }
+
+/* bridge cadence — an idle chart posts on M5 closes, so an old timestamp
+   there is normal rather than a fault */
+.mode {
+  font-size: 9px; font-weight: 700; letter-spacing: .5px;
+  padding: 1px 5px; border-radius: 3px; background: var(--plc); color: var(--dim);
+}
+.mode.active   { background: var(--buy);  color: #fff; }
+.mode.stalking { background: var(--warn); color: #1a1206; }
+.mode.idle     { background: var(--plc);  color: var(--dim); }
