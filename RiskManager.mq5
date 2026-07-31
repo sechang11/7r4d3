@@ -19,7 +19,7 @@ input string InpDiscordWebhook = "";  // Discord Webhook URL
 // RM_VERSION is stamped into every state POST. The web app compares it
 // against the contract version it was built for and warns on mismatch,
 // so a stale EA can never be mistaken for a live one.
-#define RM_VERSION "6.02"
+#define RM_VERSION "6.03"
 
 input string InpBridgeURL    = "";   // Web bridge base URL, blank = OFF (e.g. http://127.0.0.1:8787)
 input string InpBridgeToken  = "";   // Bridge shared secret (must match RM_TOKEN on the server)
@@ -752,12 +752,24 @@ void BuildDashboard()
    CreateBgRect("RM_BG", x, y, panelW, panelH, CLR_PANEL_BG, CLR_PANEL_BG);
 
    // â”€â”€ Hide/Show toggle button (always visible, sits above panel) â”€â”€
-   CreateButton("RM_BtnHide", x - 3, y - 3 - 30, 36, 26, "\\x25C0",
-                CLR_BTN_OFF, CLR_TEXT, 10);
+   CreateButton("RM_BtnHide", x - 3, y - 3 - UI(30), UI(36), UI(26), "\\x25C0",
+                CLR_BTN_OFF, CLR_TEXT, FONT_SIZE_LBL);
    ObjectSetString(0, "RM_BtnHide", OBJPROP_TOOLTIP, "Toggle dashboard visibility (X key)");
 
+   // Build + scale badge. Without this there is no way to tell from the chart
+   // which build is actually running - "the updater said v6.02" describes the
+   // file on disk, not the EA MetaTrader has loaded.
+   CreateLabel("RM_VerBadge", x + UI(44), y - 3 - UI(28),
+               "v" + RM_VERSION + "  \x2502  ui " + DoubleToString(g_uiScale, 2) + "x",
+               CLR_TEXT_DIM, FONT_SIZE_LBL);
+   ObjectSetString(0, "RM_VerBadge", OBJPROP_TOOLTIP,
+      "RiskManager v" + RM_VERSION +
+      "\nChart height: " + IntegerToString((int)ChartGetInteger(0, CHART_HEIGHT_IN_PIXELS)) + " px" +
+      "\nDashboard scale: " + DoubleToString(g_uiScale, 2) + "x" +
+      (InpUIScale > 0.05 ? " (fixed by InpUIScale)" : " (auto-fit)"));
+
    // Game-plan status, on the same row as the hide button
-   CreateLabel("RM_PlanLbl", x + 40, y - 3 - 28, "PLAN: \x2014", CLR_TEXT_DIM, 10);
+   CreateLabel("RM_PlanLbl", x + UI(150), y - 3 - UI(28), "PLAN: \x2014", CLR_TEXT_DIM, FONT_SIZE_LBL);
    ObjectSetString(0, "RM_PlanLbl", OBJPROP_TOOLTIP,
       "Session game plan pulled from the web app.\n"
       "Blocked patterns are greyed and refuse clicks.\n"
@@ -9793,6 +9805,16 @@ int OnInit()
 {
    SetChartTheme();
    UpdateUiScale();          // before BuildDashboard - every size depends on it
+
+   // Stamped into the Experts log on every load. This is the authoritative
+   // answer to "did the update take?" - the updater can only report what it
+   // wrote to disk, not what MetaTrader has actually loaded.
+   PrintFormat("RiskManager v%s loaded on %s %s | chart %dx%d px | ui scale %.2fx%s",
+               RM_VERSION, _Symbol, EnumToString((ENUM_TIMEFRAMES)Period()),
+               (int)ChartGetInteger(0, CHART_WIDTH_IN_PIXELS),
+               (int)ChartGetInteger(0, CHART_HEIGHT_IN_PIXELS),
+               g_uiScale, (InpUIScale > 0.05 ? " (fixed)" : " (auto)"));
+
    g_dStkMode = 1;
    BuildDashboard();
    ChartSetInteger(0, CHART_EVENT_OBJECT_DELETE, true);
