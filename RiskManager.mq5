@@ -3,7 +3,7 @@
 //|                                  Copyright 2026, MetaQuotes Ltd. |
 //|                                             https://www.mql5.com |
 //+------------------------------------------------------------------+
-#define RM_VERSION "6.06"
+#define RM_VERSION "6.07"
 
 #property copyright "Copyright 2026, MetaQuotes Ltd."
 #property link      "https://www.mql5.com"
@@ -45,6 +45,12 @@ input bool   InpPlanBlockEnter = true; // Also refuse ENTER while a session cap 
 // panel occupies the same fraction of the workspace on any monitor instead of
 // overflowing a smaller one.
 #define UI_REF_H        1300
+
+// Bridge cadence modes - declared here because GetBtnNormalColor(),
+// far above PostState(), colours the mode button from them.
+#define BRIDGE_IDLE   0
+#define BRIDGE_STALK  1
+#define BRIDGE_ACTIVE 2
 
 input double InpUIScale = 0;   // Dashboard scale (0 = auto-fit to chart height)
 
@@ -522,7 +528,12 @@ color GetBtnNormalColor(string name)
    if(name == "RM_BtnDMX") return g_dailyMtxActive ? CLR_BTN_ON : CLR_BTN_OFF;
    if(name == "RM_BtnWMX") return g_weeklyMtxActive ? CLR_BTN_ON : CLR_BTN_OFF;
    if(name == "RM_BtnD150") return g_daily150Active ? CLR_BTN_ON : CLR_BTN_OFF;
-   if(name == "RM_BtnStalk") return g_stalkMode ? CLR_BTN_WARN : CLR_BTN_OFF;
+   if(name == "RM_BtnStalk")
+   {
+      int bm = BridgeMode();
+      return (bm == BRIDGE_ACTIVE ? CLR_BTN_BUY
+            : bm == BRIDGE_STALK  ? CLR_BTN_WARN : CLR_BTN_OFF);
+   }
    if(name == "RM_BtnSGAP") return g_sessGapActive ? CLR_BTN_ON : CLR_BTN_OFF;
    if(name == "RM_BtnSBRK") return g_sessBrkActive ? CLR_BTN_ON : CLR_BTN_OFF;
    if(name == "RM_BtnDLVL") return g_dailyLvlActive ? CLR_BTN_ON : CLR_BTN_OFF;
@@ -622,7 +633,12 @@ color GetBtnHoverColor(string name)
    if(name == "RM_BtnDMX") return g_dailyMtxActive ? CLR_BTN_ON_HOVER : CLR_BTN_OFF_HOVER;
    if(name == "RM_BtnWMX") return g_weeklyMtxActive ? CLR_BTN_ON_HOVER : CLR_BTN_OFF_HOVER;
    if(name == "RM_BtnD150") return g_daily150Active ? CLR_BTN_ON_HOVER : CLR_BTN_OFF_HOVER;
-   if(name == "RM_BtnStalk") return g_stalkMode ? CLR_BTN_WARN_HOVER : CLR_BTN_OFF_HOVER;
+   if(name == "RM_BtnStalk")
+   {
+      int bmh = BridgeMode();
+      return (bmh == BRIDGE_ACTIVE ? CLR_BTN_BUY_HOVER
+            : bmh == BRIDGE_STALK  ? CLR_BTN_WARN_HOVER : CLR_BTN_OFF_HOVER);
+   }
    if(name == "RM_BtnSGAP") return g_sessGapActive ? CLR_BTN_ON_HOVER : CLR_BTN_OFF_HOVER;
    if(name == "RM_BtnSBRK") return g_sessBrkActive ? CLR_BTN_ON_HOVER : CLR_BTN_OFF_HOVER;
    if(name == "RM_BtnDLVL") return g_dailyLvlActive ? CLR_BTN_ON_HOVER : CLR_BTN_OFF_HOVER;
@@ -784,11 +800,14 @@ void BuildDashboard()
 
    // Stalk toggle. Bridge posting is deliberately lazy when a chart is flat
    // and unattended; this is how you tell it you are actually watching.
-   CreateButton("RM_BtnStalk", x + UI(40), y - 3 - UI(30), UI(58), UI(26), "STALK",
-                g_stalkMode ? CLR_BTN_WARN : CLR_BTN_OFF, CLR_TEXT, FONT_SIZE_LBL);
+   CreateButton("RM_BtnStalk", x + UI(40), y - 3 - UI(30), UI(58), UI(26),
+                BridgeModeName(), GetBtnNormalColor("RM_BtnStalk"), CLR_TEXT, FONT_SIZE_LBL);
    ObjectSetString(0, "RM_BtnStalk", OBJPROP_TOOLTIP,
-      "Stalking mode\nOFF: bridge posts on each M5 close\nON: posts on each M1 close"
-      "\n(a position or armed order overrides both and posts every few seconds)");
+      "Bridge cadence - click to toggle stalking"
+      "\n\nIDLE   flat and unattended - posts on each M5 close"
+      "\nSTALK  you are watching this chart - posts on each M1 close"
+      "\nLIVE   position open, order armed or a matrix running - posts every 5s"
+      "\n\nLIVE is automatic and overrides the toggle.");
 
    // Build + scale badge. Without this there is no way to tell from the chart
    // which build is actually running - "the updater said v6.02" describes the
@@ -886,7 +905,7 @@ void BuildDashboard()
    // â”€â”€ LIMIT ORDER (H button next to label) â”€â”€
    int hBtnW = UI(28);
    CreateLabel("RM_LblLmt", cx + 2, cy + 2, "LIMIT ORDER", CLR_TEXT_DIM, FONT_SIZE_LBL);
-   CreateButton("RM_HiddenLmt", cx + 82, cy, hBtnW, LABEL_H, "H",
+   CreateButton("RM_HiddenLmt", cx + UI(82), cy, hBtnW, LABEL_H, "H",
                 g_isHiddenLmt ? CLR_BTN_HIDDEN_ON : CLR_BTN_HIDDEN,
                 g_isHiddenLmt ? clrBlack : CLR_TEXT, 10);
    ObjectSetString(0, "RM_HiddenLmt", OBJPROP_TOOLTIP,
@@ -961,7 +980,7 @@ void BuildDashboard()
 
    // â”€â”€ STOP ORDER (H button next to label) â”€â”€
    CreateLabel("RM_LblStp", cx + 2, cy + 2, "STOP ORDER", CLR_TEXT_DIM, FONT_SIZE_LBL);
-   CreateButton("RM_HiddenStp", cx + 82, cy, hBtnW, LABEL_H, "H",
+   CreateButton("RM_HiddenStp", cx + UI(82), cy, hBtnW, LABEL_H, "H",
                 g_isHiddenStp ? CLR_BTN_HIDDEN_ON : CLR_BTN_HIDDEN,
                 g_isHiddenStp ? clrBlack : CLR_TEXT, 10);
    ObjectSetString(0, "RM_HiddenStp", OBJPROP_TOOLTIP,
@@ -1054,7 +1073,7 @@ void BuildDashboard()
    cy += BTN_H + SECTION_GAP;
 
    // â”€â”€ Gold divider â”€â”€
-   CreateBgRect("RM_Div1", x + 12, cy - SECTION_GAP / 2 + 1, panelW - 24, 2, CLR_BORDER_GOLD, CLR_BORDER_GOLD);
+   CreateBgRect("RM_Div1", x + UI(12), cy - SECTION_GAP / 2 + 1, panelW - 24, 2, CLR_BORDER_GOLD, CLR_BORDER_GOLD);
 
    // â•â•â•â•â•â•â•â•â•â•â• SL RANGE â•â•â•â•â•â•â•â•â•â•â•
    CreateBgRect("RM_SecSL", x + 4, cy - 3, panelW - 8, sectionH + 6, CLR_SECTION_BG, CLR_SECTION_BG);
@@ -1104,21 +1123,21 @@ void BuildDashboard()
    int col4X  = cx + 3 * innerW / 4;
    CreateBgRect("RM_InfoBG", x + 4, cy, panelW - 8, infoBarH, CLR_INFO_BG, CLR_BORDER_ACCENT);
    ObjectSetString(0, "RM_InfoBG", OBJPROP_TOOLTIP, "Info Labels");
-   CreateLabel("RM_InfoOpenLots", col1X, cy + 8,  "Open: \x2014", CLR_TEXT_DIM, 12);
-   CreateLabel("RM_InfoOpenRew",  col2X, cy + 8,  "Rew: \x2014", CLR_TEXT_DIM, 12);
-   CreateLabel("RM_InfoOpenRisk", col3X, cy + 8,  "Risk: \x2014", CLR_TEXT_DIM, 12);
-   CreateLabel("RM_InfoOpenRR",   col4X, cy + 8,  "R:R \x2014", CLR_TEXT_DIM, 12);
-   CreateLabel("RM_InfoPendLots", col1X, cy + 30, "Pend: \x2014", CLR_TEXT_DIM, 12);
-   CreateLabel("RM_InfoPendRew",  col2X, cy + 30, "Rew: \x2014", CLR_TEXT_DIM, 12);
-   CreateLabel("RM_InfoPendRisk", col3X, cy + 30, "Risk: \x2014", CLR_TEXT_DIM, 12);
-   CreateLabel("RM_InfoPendRR",   col4X, cy + 30, "R:R \x2014", CLR_TEXT_DIM, 12);
-   CreateLabel("RM_InfoTotalOpen", col1X, cy + 52, "Total: \x2014", CLR_TEXT_DIM, 12);
-   CreateLabel("RM_InfoTotalRew",  col2X, cy + 52, "Rew: \x2014", CLR_TEXT_DIM, 12);
-   CreateLabel("RM_InfoTotalRisk", col3X, cy + 52, "Risk: \x2014", CLR_TEXT_DIM, 12);
-   CreateLabel("RM_InfoTotalRR",   col4X, cy + 52, "R:R \x2014", CLR_TEXT_DIM, 12);
-   CreateLabel("RM_InfoEquity",   col1X, cy + 76, "Equity: \x2014", CLR_TEXT_DIM, 13);
-   CreateLabel("RM_InfoPnlSym",   cx + innerW / 3, cy + 76, _Symbol + ": \x2014", CLR_TEXT_DIM, 13);
-   CreateLabel("RM_InfoPnlAll",   cx + 2 * innerW / 3, cy + 76, "All: \x2014", CLR_TEXT_DIM, 13);
+   CreateLabel("RM_InfoOpenLots", col1X, cy + UI(8),  "Open: \x2014", CLR_TEXT_DIM, 12);
+   CreateLabel("RM_InfoOpenRew",  col2X, cy + UI(8),  "Rew: \x2014", CLR_TEXT_DIM, 12);
+   CreateLabel("RM_InfoOpenRisk", col3X, cy + UI(8),  "Risk: \x2014", CLR_TEXT_DIM, 12);
+   CreateLabel("RM_InfoOpenRR",   col4X, cy + UI(8),  "R:R \x2014", CLR_TEXT_DIM, 12);
+   CreateLabel("RM_InfoPendLots", col1X, cy + UI(30), "Pend: \x2014", CLR_TEXT_DIM, 12);
+   CreateLabel("RM_InfoPendRew",  col2X, cy + UI(30), "Rew: \x2014", CLR_TEXT_DIM, 12);
+   CreateLabel("RM_InfoPendRisk", col3X, cy + UI(30), "Risk: \x2014", CLR_TEXT_DIM, 12);
+   CreateLabel("RM_InfoPendRR",   col4X, cy + UI(30), "R:R \x2014", CLR_TEXT_DIM, 12);
+   CreateLabel("RM_InfoTotalOpen", col1X, cy + UI(52), "Total: \x2014", CLR_TEXT_DIM, 12);
+   CreateLabel("RM_InfoTotalRew",  col2X, cy + UI(52), "Rew: \x2014", CLR_TEXT_DIM, 12);
+   CreateLabel("RM_InfoTotalRisk", col3X, cy + UI(52), "Risk: \x2014", CLR_TEXT_DIM, 12);
+   CreateLabel("RM_InfoTotalRR",   col4X, cy + UI(52), "R:R \x2014", CLR_TEXT_DIM, 12);
+   CreateLabel("RM_InfoEquity",   col1X, cy + UI(76), "Equity: \x2014", CLR_TEXT_DIM, 13);
+   CreateLabel("RM_InfoPnlSym",   cx + innerW / 3, cy + UI(76), _Symbol + ": \x2014", CLR_TEXT_DIM, 13);
+   CreateLabel("RM_InfoPnlAll",   cx + 2 * innerW / 3, cy + UI(76), "All: \x2014", CLR_TEXT_DIM, 13);
 
    // â”€â”€ Tooltips for info bar labels â”€â”€
    ObjectSetString(0, "RM_InfoOpenLots", OBJPROP_TOOLTIP, "Total lots of open positions on this symbol");
@@ -1196,7 +1215,7 @@ void BuildToolsPanel(int x, int topY, int panelW, int cx)
    tcy += BTN_H + SECTION_GAP;
 
    // â”€â”€ Gold divider â”€â”€
-   CreateBgRect("RM_Div2", x + 12, tcy - SECTION_GAP / 2 + 1, panelW - 24, 2, CLR_BORDER_GOLD, CLR_BORDER_GOLD);
+   CreateBgRect("RM_Div2", x + UI(12), tcy - SECTION_GAP / 2 + 1, panelW - 24, 2, CLR_BORDER_GOLD, CLR_BORDER_GOLD);
 
    // â”€â”€ Row: Close All | Cancel All | Move BE â”€â”€
    int closeW = (innerW - 3 * BTN_GAP) / 4;
@@ -1397,7 +1416,7 @@ void BuildToolsPanel(int x, int topY, int panelW, int cx)
    tcy += BTN_H + SECTION_GAP;
 
    // â”€â”€ Gold divider â”€â”€
-   CreateBgRect("RM_Div3", x + 12, tcy - SECTION_GAP / 2 + 1, panelW - 24, 2, CLR_BORDER_GOLD, CLR_BORDER_GOLD);
+   CreateBgRect("RM_Div3", x + UI(12), tcy - SECTION_GAP / 2 + 1, panelW - 24, 2, CLR_BORDER_GOLD, CLR_BORDER_GOLD);
 
    // â”€â”€ Equity TP% / SL% with two rows of +/- â”€â”€
    int halfW = (innerW - BTN_GAP) / 2;
@@ -9379,9 +9398,28 @@ string BuildStateJson()
 //| A mode change posts immediately, so opening a position never waits |
 //| five minutes to show up.                                           |
 //+------------------------------------------------------------------+
-#define BRIDGE_IDLE   0
-#define BRIDGE_STALK  1
-#define BRIDGE_ACTIVE 2
+
+// The button face carries the CURRENT mode rather than the button's name.
+// Labelling it "STALK" meant a grey STALK button was really "idle", which is
+// exactly the kind of thing you should not have to know.
+string BridgeModeName()
+{
+   int m = BridgeMode();
+   return (m == BRIDGE_ACTIVE ? "LIVE" : (m == BRIDGE_STALK ? "STALK" : "IDLE"));
+}
+
+// Called from OnTimer: the mode changes on its own when a position opens or
+// the last one closes, so the face has to follow without a click.
+void RefreshStalkBtn()
+{
+   static int lastShown = -1;
+   int m = BridgeMode();
+   if(m == lastShown) return;
+   lastShown = m;
+   if(ObjectFind(0, "RM_BtnStalk") < 0) return;
+   ObjectSetString(0, "RM_BtnStalk", OBJPROP_TEXT, BridgeModeName());
+   ObjectSetInteger(0, "RM_BtnStalk", OBJPROP_BGCOLOR, GetBtnNormalColor("RM_BtnStalk"));
+}
 
 int BridgeMode()
 {
@@ -10797,6 +10835,7 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
       if(sparam == "RM_BtnStalk")
       {
          g_stalkMode = !g_stalkMode;
+         ObjectSetString(0, "RM_BtnStalk", OBJPROP_TEXT, BridgeModeName());
          ObjectSetInteger(0, "RM_BtnStalk", OBJPROP_BGCOLOR, GetBtnNormalColor("RM_BtnStalk"));
          ObjectSetInteger(0, sparam, OBJPROP_STATE, false);
          // PostState() sees the mode change on the next timer tick and posts
@@ -10915,6 +10954,7 @@ void OnTimer()
    // costing ~14% of every tick - on the same handler as the exit/partials/BE/
    // cancel matrices, the equity guards and the hidden trail. A stall here
    // delays a label; a stall there delays a stop.
+   RefreshStalkBtn();    // keep the mode button honest
    PostState();          // web bridge: cadence follows BridgeMode()
    PollCommands();       // web bridge: remote ARM commands (opt-in)
 

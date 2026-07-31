@@ -35,7 +35,7 @@ const HOST = process.env.HOST ?? (ON_PAAS ? '0.0.0.0' : '127.0.0.1');
 
 // Contract version this server was built against. Compared to the EA's
 // RM_VERSION on every snapshot so a stale EA can't masquerade as live.
-const CONTRACT_VERSION = '6.06';
+const CONTRACT_VERSION = '6.07';
 
 // Shared secret guarding every /api/* route. Set RM_TOKEN in the environment
 // (never in source). Both the EA and the browser must present it.
