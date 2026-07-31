@@ -263,3 +263,28 @@ button.ghost:hover { color: #fff; }
 .mode.active   { background: var(--buy);  color: #fff; }
 .mode.stalking { background: var(--warn); color: #1a1206; }
 .mode.idle     { background: var(--plc);  color: var(--dim); }
+
+/* ── trade controls ─────────────────────────────────────── */
+.ctrlRow {
+  display: flex; align-items: center; gap: 9px;
+  flex-wrap: wrap; padding: 6px 0;
+}
+.ctrlLbl {
+  width: 92px; flex: 0 0 92px; color: var(--dim);
+  font-size: 11px; text-transform: uppercase; letter-spacing: .8px; font-weight: 600;
+}
+.ctrlSet { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.ctrlRow input[type=number] { width: 120px; margin-top: 0; }
+
+.pbtn {
+  padding: 7px 14px; border-radius: 4px; cursor: pointer; user-select: none;
+  border: 1px solid var(--border); background: var(--plc);
+  color: var(--dim); font-weight: 700; font-size: 13px;
+  font-variant-numeric: tabular-nums; transition: .12s;
+}
+.pbtn:hover  { color: #fff; border-color: var(--dim); }
+.pbtn.sel    { background: var(--on); border-color: var(--on); color: #fff; }
+.pbtn.on     { background: var(--sell); border-color: var(--sell); color: #fff; }
+.pbtn.danger { background: var(--sell); border-color: var(--sell); color: #fff; }
+.pbtn.go     { background: var(--buy);  border-color: var(--buy);  color: #fff; }
+.pbtn:disabled, .pbtn.off { opacity: .4; cursor: not-allowed; }

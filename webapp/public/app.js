@@ -304,6 +304,13 @@ async function queueArm(p) {
   $('armNote').textContent = `queued #${r.id} · arm ${p.label} on ${sym}`;
 }
 
+$('cRiskSet').onclick = () => {
+  const v = Number($('cRiskCustom').value);
+  if (!v || v <= 0) { $('ctrlMsg').textContent = 'enter an amount'; return; }
+  cmd('setRisk', { amount: v }, `custom risk $${v}`);
+};
+$('cRiskCustom').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('cRiskSet').click(); });
+
 $('armBtn').onclick = () => {
   remoteArmed = !remoteArmed;
   $('armBox').className = 'arm' + (remoteArmed ? ' on' : '');
@@ -315,6 +322,141 @@ $('armBtn').onclick = () => {
     ? `remote armed${where} — clicking a pattern queues a command`
     : 'remote commands disarmed';
 };
+
+// ── trade controls ──────────────────────────────────────────────────
+// Every button here queues a command addressed at the selected instance. None
+// of them send an order: the only action that does is `execute`, and the EA
+// refuses it unless InpAllowRemoteExec is on.
+async function cmd(action, params, msg) {
+  if (!liveKey) { $('ctrlMsg').textContent = 'no instance selected'; return null; }
+  try {
+    const r = await api('/api/commands', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, target: liveKey, params: params ?? {} }),
+    }).then((x) => x.json());
+    $('ctrlMsg').textContent = `${msg ?? action} — queued #${r.id}`;
+    return r;
+  } catch (e) {
+    $('ctrlMsg').textContent = `failed: ${e.message}`;
+    return null;
+  }
+}
+
+const btn = (label, cls, onclick, title) => {
+  const b = document.createElement('button');
+  b.className = 'pbtn' + (cls ? ' ' + cls : '');
+  b.textContent = label;
+  if (title) b.title = title;
+  b.onclick = onclick;
+  return b;
+};
+
+function renderControls(state) {
+  const card = $('ctrlCard');
+  if (!state) { card.hidden = true; return; }
+  card.hidden = false;
+
+  const r = state.risk ?? {};
+  const d = state.digits ?? 2;
+
+  // Risk presets. Index 3 is the CUSTOM slot the on-chart panel edits by
+  // keyboard; here it takes a number field instead.
+  const risk = $('cRisk');
+  risk.replaceChildren();
+  (r.riskOpts ?? []).forEach((v, i) => {
+    const lbl = i === 3 ? (v > 0 ? '$' + v : 'CUSTOM') : '$' + v;
+    risk.appendChild(btn(lbl, i === r.riskIndex ? 'sel' : '',
+      () => i === 3 ? $('cRiskCustom').focus() : cmd('setRisk', { index: i }, `risk $${v}`)));
+  });
+
+  const sl = $('cSlPct');
+  sl.replaceChildren();
+  (r.slPctOpts ?? []).forEach((v, i) =>
+    sl.appendChild(btn(v + '%', i === r.slPctIndex ? 'sel' : '',
+      () => cmd('setSlPct', { index: i }, `SL ${v}%`))));
+
+  const rr = $('cRR');
+  rr.replaceChildren();
+  (r.rrOpts ?? []).forEach((v, i) =>
+    rr.appendChild(btn(v.toFixed(1) + ':1', i === r.rrIndex ? 'sel' : '',
+      () => cmd('setRR', { index: i }, `R:R ${v}`))));
+
+  const sp = $('cSplit');
+  sp.replaceChildren();
+  for (let n = 1; n <= 5; n++)
+    sp.appendChild(btn(n === 1 ? 'none' : 'x' + n, n === r.split ? 'sel' : '',
+      () => cmd('setSplit', { count: n }, `split x${n}`)));
+
+  const hid = $('cHidden');
+  hid.replaceChildren();
+  hid.appendChild(btn('Limit', r.hiddenLmt ? 'on' : '',
+    () => cmd('hiddenLmt', { on: !r.hiddenLmt }, 'hidden limit'),
+    'Armed locally; only sent to the broker when price reaches entry'));
+  hid.appendChild(btn('Stop', r.hiddenStp ? 'on' : '',
+    () => cmd('hiddenStp', { on: !r.hiddenStp }, 'hidden stop')));
+
+  // Armed setup: cancel is always offered, execute only when the EA allows it.
+  const armed = state.armed ?? {};
+  const box = $('cArmed');
+  box.replaceChildren();
+  if (!armed.active) {
+    const s = document.createElement('span');
+    s.className = 'mute';
+    s.textContent = 'nothing armed — click a pattern below to draw lines on the chart';
+    box.appendChild(s);
+  } else {
+    const info = document.createElement('span');
+    info.innerHTML = `<strong>${armed.button ?? '—'}</strong>` +
+      `<span class="mute"> entry ${fmt(armed.entry, d)} · SL ${fmt(armed.sl, d)} · TP ${fmt(armed.tp, d)}` +
+      `${armed.hidden ? ' · hidden' : ''} · ${r.lots ?? '—'} lots</span>`;
+    box.appendChild(info);
+    box.appendChild(btn('Cancel', 'danger', () => cmd('cancel', {}, 'cancelled')));
+
+    const canExec = state.session?.remoteExecAllowed;
+    box.appendChild(btn(canExec ? 'EXECUTE' : 'EXECUTE (disabled)', canExec ? 'go' : 'off',
+      () => {
+        if (!canExec) return;
+        if (!confirm(`Send this order for real?\n\n${armed.button} on ${state.symbol}\n` +
+                     `entry ${fmt(armed.entry, d)}  SL ${fmt(armed.sl, d)}  TP ${fmt(armed.tp, d)}\n` +
+                     `${r.lots} lots, $${r.riskUsd} risk\n\nThis is not a preview.`)) return;
+        cmd('execute', {}, 'ORDER SENT');
+      },
+      canExec ? 'Sends the order' : 'Set InpAllowRemoteExec = true in the EA to enable'));
+  }
+
+  const openCount = state.exposure?.openCount ?? 0;
+  const cl = $('cClose');
+  cl.replaceChildren();
+  [25, 50, 75].forEach((p) => {
+    const b = btn(p + '%', '', () => {
+      if (confirm(`Close ${p}% of every open position on ${state.symbol}?`)) cmd('closePct', { pct: p }, `closed ${p}%`);
+    });
+    b.disabled = openCount === 0;
+    cl.appendChild(b);
+  });
+  const all = btn('Close all', 'danger', () => {
+    if (confirm(`Close ALL positions on ${state.symbol}?`)) cmd('closeAll', {}, 'closed all');
+  });
+  all.disabled = openCount === 0;
+  cl.appendChild(all);
+
+  for (const [id, act, field] of [['cMoveBE', 'moveBE', null],
+                                 ['cSetSL', 'setSL', 'cSlPrice'],
+                                 ['cSetTP', 'setTP', 'cTpPrice']]) {
+    const el = $(id);
+    el.disabled = openCount === 0;
+    el.onclick = () => {
+      if (!field) {
+        if (confirm(`Move SL to entry on every position on ${state.symbol}?`)) cmd('moveBE', {}, 'SL to BE');
+        return;
+      }
+      const px = Number($(field).value);
+      if (!px) { $('ctrlMsg').textContent = 'enter a price first'; return; }
+      cmd(act, { price: px }, `${act} ${px}`);
+    };
+  }
+}
 
 // ── instance strip ──────────────────────────────────────────────────
 // One card per live EA, grouped by client. With ten charts per terminal and
@@ -450,6 +592,7 @@ function render(payload) {
     conn.className = 'pill down';
     $('connTxt').textContent = 'waiting for EA…';
     renderBuckets([], null, session);
+    $('ctrlCard').hidden = true;
     return;
   }
   if (stale)         { conn.className = 'pill stale'; $('connTxt').textContent = `stale ${Math.round(ageMs / 1000)}s`; }
@@ -465,6 +608,8 @@ function render(payload) {
   } else banner.hidden = true;
 
   digits = state.digits ?? 2;
+
+  renderControls(state);
 
   $('sym').textContent   = state.symbol ?? '—';
   $('price').textContent = fmt(state.price?.bid);

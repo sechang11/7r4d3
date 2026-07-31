@@ -158,6 +158,51 @@
       <h2 style="margin:0">Entry patterns</h2>
       <span class="desc">availability from the EA (<code>IsOrderBtnAvailable</code>) — never recomputed here</span>
       <div class="spacer"></div>
+  <!-- trade controls: the same presets as the on-chart panel -->
+  <div class="card wide" id="ctrlCard" style="margin-bottom:14px" hidden>
+    <div class="bucket-head" style="margin-bottom:12px">
+      <h2 style="margin:0">Trade controls</h2>
+      <span class="desc">changes apply to the EA immediately, and re-price any armed setup</span>
+      <div class="spacer"></div>
+      <span class="desc" id="ctrlMsg"></span>
+    </div>
+
+    <div class="ctrlRow"><span class="ctrlLbl">Risk</span><div class="ctrlSet" id="cRisk"></div>
+      <input id="cRiskCustom" type="number" min="1" step="50" placeholder="custom $">
+      <button class="ghost" id="cRiskSet">Set</button></div>
+
+    <div class="ctrlRow"><span class="ctrlLbl">SL range</span><div class="ctrlSet" id="cSlPct"></div></div>
+    <div class="ctrlRow"><span class="ctrlLbl">R:R</span><div class="ctrlSet" id="cRR"></div></div>
+    <div class="ctrlRow"><span class="ctrlLbl">Split</span><div class="ctrlSet" id="cSplit"></div></div>
+    <div class="ctrlRow"><span class="ctrlLbl">Hidden</span><div class="ctrlSet" id="cHidden"></div></div>
+
+    <div class="ctrlRow" style="border-top:1px solid var(--border);padding-top:11px;margin-top:4px">
+      <span class="ctrlLbl">Armed</span>
+      <div class="ctrlSet" id="cArmed"><span class="mute">nothing armed</span></div>
+    </div>
+
+    <div class="bucket-head" style="margin:16px 0 10px">
+      <h2 style="margin:0">Position management</h2>
+      <span class="desc">acts on every open position for this symbol</span>
+    </div>
+    <div class="ctrlRow"><span class="ctrlLbl">Close</span><div class="ctrlSet" id="cClose"></div></div>
+    <div class="ctrlRow"><span class="ctrlLbl">Stops</span>
+      <div class="ctrlSet">
+        <button class="ghost" id="cMoveBE">Move to BE</button>
+        <input id="cSlPrice" type="number" step="any" placeholder="SL price">
+        <button class="ghost" id="cSetSL">Set SL</button>
+        <input id="cTpPrice" type="number" step="any" placeholder="TP price">
+        <button class="ghost" id="cSetTP">Set TP</button>
+      </div>
+    </div>
+    <p class="desc" style="margin:10px 0 0">
+      Set&nbsp;SL / Set&nbsp;TP take a price because the on-chart versions work by
+      dragging a line, and there is no chart here to drag on. The matrices
+      (Exit / Partials / BE / Cancel) and the trail buttons are drag-based too —
+      still chart-only for now.
+    </p>
+  </div>
+
       <div class="arm" id="armBox">
         <span class="note" id="armNote">remote commands disarmed</span>
         <button id="armBtn">ARM REMOTE</button>

@@ -3,7 +3,7 @@
 //|                                  Copyright 2026, MetaQuotes Ltd. |
 //|                                             https://www.mql5.com |
 //+------------------------------------------------------------------+
-#define RM_VERSION "6.07"
+#define RM_VERSION "6.08"
 
 #property copyright "Copyright 2026, MetaQuotes Ltd."
 #property link      "https://www.mql5.com"
@@ -29,6 +29,10 @@ input string InpBridgeURL    = "";   // Web bridge base URL, blank = OFF (e.g. h
 input string InpBridgeToken  = "";   // Bridge shared secret (must match RM_TOKEN on the server)
 input int    InpStatePostSec = 3;    // Seconds between state POSTs
 input bool   InpAllowRemote  = false;// Allow remote ARM commands from the web app
+// Separate, and deliberately off. InpAllowRemote lets the web app ARM a
+// setup - which only draws lines. This one lets it SEND the order. Keep it
+// off and the chart's Enter key stays the only thing that spends money.
+input bool   InpAllowRemoteExec = false;// Allow the web app to EXECUTE an armed setup
 input int    InpCmdPollSec   = 2;    // Seconds between command polls (when remote allowed)
 
 //--- Game-plan enforcement -------------------------------------------
@@ -9328,6 +9332,19 @@ string BuildStateJson()
    j += "\"slPct\":"      + JNum(g_slPctValues[g_slPctIndex],2) + ",";
    j += "\"rr\":"         + JNum(g_rrValues[g_rrIndex],1) + ",";
    j += "\"split\":"      + IntegerToString(g_orderSplit) + ",";
+   // Indices and the preset tables, so the web app can render the same
+   // buttons and highlight the live one instead of guessing from the value.
+   j += "\"riskIndex\":"  + IntegerToString(g_riskIndex) + ",";
+   j += "\"slPctIndex\":" + IntegerToString(g_slPctIndex) + ",";
+   j += "\"rrIndex\":"    + IntegerToString(g_rrIndex) + ",";
+   j += "\"riskOpts\":["  + JNum(g_riskValues[0],0) + "," + JNum(g_riskValues[1],0) + ","
+                          + JNum(g_riskValues[2],0) + "," + JNum(g_riskValues[3],0) + "],";
+   j += "\"slPctOpts\":[" + JNum(g_slPctValues[0],2) + "," + JNum(g_slPctValues[1],2) + ","
+                          + JNum(g_slPctValues[2],2) + "," + JNum(g_slPctValues[3],2) + "],";
+   j += "\"rrOpts\":["    + JNum(g_rrValues[0],1) + "," + JNum(g_rrValues[1],1) + ","
+                          + JNum(g_rrValues[2],1) + "],";
+   j += "\"hiddenLmt\":"  + JBool(g_isHiddenLmt) + ",";
+   j += "\"hiddenStp\":"  + JBool(g_isHiddenStp) + ",";
    j += "\"slDistance\":" + JNum(slDist,dg) + ",";
    j += "\"lots\":"       + JNum(CalcLotSize(slDist),2);
    j += "},";
@@ -9358,7 +9375,8 @@ string BuildStateJson()
    j += "\"session\":{";
    j += "\"tradesTodaySymbol\":" + IntegerToString(CountTradesToday(true)) + ",";
    j += "\"tradesTodayAll\":"    + IntegerToString(CountTradesToday(false)) + ",";
-   j += "\"remoteAllowed\":"     + JBool(InpAllowRemote);
+   j += "\"remoteAllowed\":"     + JBool(InpAllowRemote) + ",";
+   j += "\"remoteExecAllowed\":" + JBool(InpAllowRemoteExec);
    j += "},";
 
    // ── armed order (lines on chart, not yet sent) ──
@@ -9559,6 +9577,159 @@ string BridgeHeaders()
 //| Arm a pattern by button id — the same handlers the chart buttons  |
 //| use, so a remote arm and a click produce identical lines.         |
 //+------------------------------------------------------------------+
+//+------------------------------------------------------------------+
+//| Remote command dispatch                                           |
+//|                                                                   |
+//| ARMING IS NOT EXECUTION. Every action below either changes a       |
+//| setting or draws lines; the one that actually sends an order is    |
+//| "execute", and it is refused unless InpAllowRemoteExec is on.      |
+//| Pressing Enter on the chart remains the default way to fire.       |
+//|                                                                   |
+//| Anything the on-chart version does by dragging a line takes an     |
+//| explicit "price" instead - there is no chart to drag on.           |
+//+------------------------------------------------------------------+
+bool DispatchRemote(string action, string button, string body, string &note)
+{
+   // ── pre-trade settings ────────────────────────────────────────
+   if(action == "setRisk")
+   {
+      int    idx = (int)JsonGetInt(body, "index");
+      double amt = JsonGetDouble(body, "amount");
+      if(amt > 0)
+      {
+         g_riskValues[3] = amt;
+         g_riskIndex     = 3;
+         ObjectSetString(0, RiskBtnName(3), OBJPROP_TEXT, "$" + IntegerToString((int)amt));
+         note = "custom risk $" + DoubleToString(amt, 0);
+      }
+      else if(idx >= 0 && idx <= 2)
+      {
+         g_riskIndex = idx;
+         note = "risk $" + DoubleToString(g_riskValues[idx], 0);
+      }
+      else { note = "index 0-2, or amount > 0"; return false; }
+
+      g_customRiskEditing = false;
+      g_customRiskText    = "";
+      SetToggleGroup("RM_Risk_", 4, g_riskIndex, CLR_BTN_ON, CLR_BTN_OFF);
+      if(g_linesActive) ReRenderLinesFromSettings();
+      ChartRedraw(0);
+      return true;
+   }
+
+   if(action == "setSlPct")
+   {
+      int idx = (int)JsonGetInt(body, "index");
+      if(idx < 0 || idx > 3) { note = "index 0-3"; return false; }
+      g_slPctIndex       = idx;
+      g_slManualOverride = false;          // a preset overrides a manual drag
+      SetToggleGroup("RM_SlPct_", 4, g_slPctIndex, CLR_BTN_ON, CLR_BTN_OFF);
+      if(g_linesActive) ReRenderLinesFromSettings();
+      ChartRedraw(0);
+      note = "SL " + DoubleToString(g_slPctValues[idx], 2) + "%";
+      return true;
+   }
+
+   if(action == "setRR")
+   {
+      int idx = (int)JsonGetInt(body, "index");
+      if(idx < 0 || idx > 2) { note = "index 0-2"; return false; }
+      g_rrIndex = idx;
+      SetToggleGroup("RM_RR_", 3, g_rrIndex, CLR_BTN_ON, CLR_BTN_OFF);
+      if(g_linesActive) ReRenderLinesFromSettings();
+      ChartRedraw(0);
+      note = "R:R " + DoubleToString(g_rrValues[idx], 1);
+      return true;
+   }
+
+   if(action == "setSplit")
+   {
+      int n = (int)JsonGetInt(body, "count");
+      if(n < 1 || n > 9) { note = "count 1-9"; return false; }
+      g_orderSplit = n;
+      ObjectSetString(0, "RM_BtnSplit", OBJPROP_TEXT, n > 1 ? "x" + IntegerToString(n) : "SPLIT");
+      ObjectSetInteger(0, "RM_BtnSplit", OBJPROP_BGCOLOR, (n > 1) ? CLR_BTN_ON : CLR_BTN_OFF);
+      if(g_linesActive) ReRenderLinesFromSettings();
+      ChartRedraw(0);
+      note = "split x" + IntegerToString(n);
+      return true;
+   }
+
+   if(action == "hiddenLmt" || action == "hiddenStp")
+   {
+      bool on = JsonGetBool(body, "on");
+      if(action == "hiddenLmt") g_isHiddenLmt = on; else g_isHiddenStp = on;
+      string bn = (action == "hiddenLmt") ? "RM_HiddenLmt" : "RM_HiddenStp";
+      ObjectSetInteger(0, bn, OBJPROP_BGCOLOR, GetBtnNormalColor(bn));
+      ChartRedraw(0);
+      note = action + (on ? " ON" : " OFF");
+      return true;
+   }
+
+   // ── arming and its two endings ────────────────────────────────
+   if(action == "arm") return ArmPatternRemote(button, note);
+
+   if(action == "cancel")
+   {
+      if(!g_linesActive) { note = "nothing armed"; return false; }
+      CancelHiddenOrder();
+      DeleteOrderLines();
+      g_linesActive = false;
+      ChartRedraw(0);
+      note = "armed setup cancelled";
+      return true;
+   }
+
+   if(action == "execute")
+   {
+      // The deliberate gate. Arming is harmless; this spends money.
+      if(!InpAllowRemoteExec) { note = "remote execution disabled (InpAllowRemoteExec)"; return false; }
+      if(!g_linesActive)      { note = "nothing armed to execute"; return false; }
+      string blocked = PlanBlockReason(g_lastOrderBtn);
+      if(blocked != "")       { note = blocked; return false; }
+      ExecuteTrade();
+      note = "executed " + g_lastOrderBtn;
+      return true;
+   }
+
+   // ── management of live positions ──────────────────────────────
+   if(action == "moveBE")     { MoveAllSLToBreakeven(); note = "SL to entry on all positions"; return true; }
+   if(action == "closeAll")   { CloseAllPositions(); note = "all positions closed"; return true; }
+
+   if(action == "closePct")
+   {
+      double pct = JsonGetDouble(body, "pct");
+      if(pct <= 0 || pct >= 100) { note = "pct must be 1-99"; return false; }
+      ClosePartial(pct);
+      note = "closed " + DoubleToString(pct, 0) + "%";
+      return true;
+   }
+
+   // Drag replacements: the on-chart button spawns a line you drag, then
+   // Enter applies it. Remotely the price comes in the payload instead.
+   if(action == "setSL" || action == "setTP")
+   {
+      double px = JsonGetDouble(body, "price");
+      if(px <= 0) { note = "price required"; return false; }
+      int n = 0;
+      for(int i = PositionsTotal() - 1; i >= 0; i--)
+      {
+         ulong tk = PositionGetTicket(i);
+         if(tk == 0) continue;
+         if(PositionGetString(POSITION_SYMBOL) != _Symbol) continue;
+         double sl = (action == "setSL") ? px : PositionGetDouble(POSITION_SL);
+         double tp = (action == "setTP") ? px : PositionGetDouble(POSITION_TP);
+         if(g_trade.PositionModify(tk, sl, tp)) n++;
+      }
+      if(n == 0) { note = "no positions on " + _Symbol; return false; }
+      note = action + " " + DoubleToString(px, _Digits) + " on " + IntegerToString(n) + " position(s)";
+      return true;
+   }
+
+   note = "unsupported action: " + action;
+   return false;
+}
+
 bool ArmPatternRemote(string b, string &note)
 {
    if(!IsOrderBtnAvailable(b)) { note = "gate not satisfied for " + b; return false; }
@@ -9651,8 +9822,7 @@ void PollCommands()
    string note   = "";
    bool   ok     = false;
 
-   if(action == "arm") ok = ArmPatternRemote(button, note);
-   else                note = "unsupported action: " + action;
+   ok = DispatchRemote(action, button, body, note);
 
    Print("RM bridge: command #", id, " ", action, " ", button, " -> ", ok ? "OK" : "REFUSED", " (", note, ")");
    AckCommand(id, ok, note);
