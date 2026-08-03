@@ -208,6 +208,31 @@ if ($Diagnose) {
     try { D 'dns' (([Net.Dns]::GetHostAddresses($u.Host) | Select-Object -First 3 | ForEach-Object { $_.IPAddressToString }) -join ', ') }
     catch { D 'dns' "FAILED - $($_.Exception.Message)" }
 
+    # Raw TCP before any HTTP. A timeout here means the port is blocked - a
+    # firewall, AV, or network policy - and no amount of token fiddling will
+    # help. A fast connect followed by an HTTP timeout means something is
+    # intercepting the session instead.
+    $port = if ($u.Port -gt 0) { $u.Port } else { if ($u.Scheme -eq 'https') { 443 } else { 80 } }
+    try {
+      $tcp = New-Object Net.Sockets.TcpClient
+      $sw  = [Diagnostics.Stopwatch]::StartNew()
+      if ($tcp.ConnectAsync($u.Host, $port).Wait(8000)) {
+        D 'tcp connect' ("OK in {0} ms" -f [int]$sw.ElapsedMilliseconds)
+      } else {
+        D 'tcp connect' "TIMED OUT after 8s - port $port is blocked (firewall / AV / network policy)"
+      }
+      $tcp.Close()
+    } catch { D 'tcp connect' "FAILED - $($_.Exception.Message)" }
+
+    # A proxy that needs credentials, or one pointed somewhere stale, looks
+    # exactly like the network being down from inside PowerShell.
+    try {
+      $pxy = [Net.WebRequest]::DefaultWebProxy
+      $via = if ($pxy) { $pxy.GetProxy([Uri]$cfgD.bridgeUrl) } else { $null }
+      if ($via -and $via.Authority -ne $u.Authority) { D 'proxy' "IN USE -> $($via.Authority)" }
+      else { D 'proxy' 'none (direct)' }
+    } catch { D 'proxy' "could not determine - $($_.Exception.Message)" }
+
     # No token needed - separates "server down / unreachable" from "token wrong".
     try {
       $h = Invoke-RestMethod "$($cfgD.bridgeUrl)/api/health" -UseBasicParsing -TimeoutSec 20
