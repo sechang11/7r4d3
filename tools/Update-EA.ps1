@@ -26,7 +26,8 @@ param(
   [switch] $Yes,               # pre-answer the open-position confirmation
   [string] $TerminalDir = '',  # override the configured terminal data folder
   [switch] $ListTerminals,     # enumerate installations and exit
-  [string] $SetNickname = ''   # name the -TerminalDir installation and exit
+  [string] $SetNickname = '',  # name the -TerminalDir installation and exit
+  [switch] $Diagnose           # print a support report and exit; changes nothing
 )
 
 $ErrorActionPreference = 'Stop'
@@ -149,6 +150,116 @@ if ($SetNickname) {
   Set-Nickname $TerminalDir $SetNickname
   Say "  Named $TerminalDir -> $SetNickname" 'Green'
   Finish 0 @{ ok = $true; status = 'named'; dir = $TerminalDir; nickname = $SetNickname }
+}
+
+# ── support report ─────────────────────────────────────────────────
+# Everything a remote install can get wrong, checked in order and printed
+# as one block to paste back. Never prints the token - only its length and
+# first characters, which is enough to compare against the server's startup
+# log without either side handling a secret.
+if ($Diagnose) {
+  function D($k, $v) { Say ("  {0,-22} {1}" -f $k, $v) }
+  Say ''
+  Say '  ===== RiskManager updater - support report =====' 'Cyan'
+  D 'when'        (Get-Date -Format 'yyyy-MM-dd HH:mm:ss zzz')
+  D 'machine'     "$env:COMPUTERNAME / $env:USERNAME"
+  D 'os'          (Get-CimInstance Win32_OperatingSystem -EA SilentlyContinue).Caption
+  D 'powershell'  $PSVersionTable.PSVersion.ToString()
+  D 'TLS'         ([Net.ServicePointManager]::SecurityProtocol)
+  D 'script'      $PSCommandPath
+  $me = $PSCommandPath
+  if (Test-Path $me) { D 'script sha'  (Get-FileHash $me -Algorithm SHA256).Hash.Substring(0,12).ToLower() }
+  D 'GUI present'  $(if (Test-Path (Join-Path $here 'Update-EA-GUI.ps1')) { 'yes' } else { 'NO - run Update-EA.bat once to fetch it' })
+
+  Say ''
+  Say '  -- config --' 'Cyan'
+  if (-not (Test-Path $configPath)) {
+    D 'config' "MISSING at $configPath"
+  } else {
+    D 'config' $configPath
+    $bytes = [IO.File]::ReadAllBytes($configPath)
+    $bom = if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) { 'UTF-8 BOM' }
+           elseif ($bytes.Length -ge 2 -and $bytes[0] -eq 0xFF -and $bytes[1] -eq 0xFE) { 'UTF-16 LE (WRONG - save as UTF-8)' }
+           else { 'none' }
+    D 'size / bom' "$($bytes.Length) bytes / $bom"
+    D 'modified'   (Get-Item $configPath).LastWriteTime
+    $cfgD = $null
+    try { $cfgD = Get-Content $configPath -Raw | ConvertFrom-Json }
+    catch { D 'parse' "FAILED - $($_.Exception.Message)" }
+    if ($cfgD) {
+      D 'bridgeUrl' $cfgD.bridgeUrl
+      $t = [string]$cfgD.token
+      if (-not $t) { D 'token' 'EMPTY' }
+      else {
+        $pad = if ($t -ne $t.Trim()) { '  <-- HAS LEADING/TRAILING WHITESPACE' } else { '' }
+        D 'token' ("{0} chars, starts '{1}'{2}" -f $t.Length, $t.Substring(0,[Math]::Min(4,$t.Length)), $pad)
+      }
+      D 'terminalDataDir' $(if ($cfgD.terminalDataDir) { $cfgD.terminalDataDir } else { '(blank - will auto-detect)' })
+      D 'metaEditorPath'  $(if ($cfgD.metaEditorPath)  { $cfgD.metaEditorPath }  else { '(blank - will auto-detect)' })
+      if ($cfgD.eaName) { D 'eaName' $cfgD.eaName }
+    }
+  }
+
+  Say ''
+  Say '  -- network --' 'Cyan'
+  if ($cfgD -and $cfgD.bridgeUrl) {
+    $u = [Uri]$cfgD.bridgeUrl
+    D 'host' "$($u.Host):$(if ($u.Port -gt 0) { $u.Port } else { if ($u.Scheme -eq 'https') { 443 } else { 80 } })"
+    try { D 'dns' (([Net.Dns]::GetHostAddresses($u.Host) | Select-Object -First 3 | ForEach-Object { $_.IPAddressToString }) -join ', ') }
+    catch { D 'dns' "FAILED - $($_.Exception.Message)" }
+
+    # No token needed - separates "server down / unreachable" from "token wrong".
+    try {
+      $h = Invoke-RestMethod "$($cfgD.bridgeUrl)/api/health" -UseBasicParsing -TimeoutSec 20
+      D 'health' 'OK 200 (server is up and reachable)'
+      D 'contractVersion' $h.contractVersion
+      D 'serves mq5'      $h.sources.mq5.version
+      D 'data persistent' $h.dataPersistent
+      D 'auth required'   $h.authRequired
+    } catch {
+      $c = $null; try { $c = [int]$_.Exception.Response.StatusCode } catch { }
+      D 'health' "FAILED$(if ($c) { " (http $c)" }) - $($_.Exception.Message)"
+    }
+
+    # Same host, but authenticated. This is the line that matters.
+    try {
+      Invoke-RestMethod "$($cfgD.bridgeUrl)/api/source" -Headers @{ Authorization = "Bearer $($cfgD.token)" } -UseBasicParsing -TimeoutSec 20 > $null
+      D 'authed call' 'OK 200 - the token is correct'
+    } catch {
+      $c = $null; try { $c = [int]$_.Exception.Response.StatusCode } catch { }
+      if ($c -eq 401) { D 'authed call' '401 - server reached, TOKEN REJECTED (see token length above)' }
+      else            { D 'authed call' "FAILED$(if ($c) { " (http $c)" }) - $($_.Exception.Message)" }
+    }
+  } else { D 'network' 'skipped - no bridgeUrl' }
+
+  Say ''
+  Say '  -- terminals --' 'Cyan'
+  $dirsD = @(Find-DataDirs)
+  if ($dirsD.Count -eq 0) { D 'found' 'NONE under %APPDATA%\MetaQuotes\Terminal (portable install?)' }
+  foreach ($d in $dirsD) {
+    $m = Get-TerminalLabel $d
+    $tag = @(); if ($m.HasMq5) { $tag += 'MT5' }; if ($m.HasMq4) { $tag += 'MT4' }; if ($m.HasEa) { $tag += 'RM installed' }
+    Say ("    {0}  [{1}]" -f $m.Install, ($tag -join ', '))
+    foreach ($plat in @(@('MQL5','ex5'), @('MQL4','ex4'))) {
+      $ex = Join-Path $d "$($plat[0])\Experts\$eaName.$($plat[1])"
+      if (Test-Path $ex) {
+        Say ("        {0}  {1}  {2} KB" -f $plat[1], (Get-Item $ex).LastWriteTime.ToString('MM-dd HH:mm'), [int]((Get-Item $ex).Length/1KB))
+      }
+    }
+  }
+
+  Say ''
+  Say '  -- install markers --' 'Cyan'
+  $mk = @(Get-ChildItem $here -Filter '.installed.*.json' -EA SilentlyContinue -Force)
+  if ($mk.Count -eq 0) { D 'markers' 'none - nothing installed by this updater yet' }
+  foreach ($f in $mk) {
+    $j = $null; try { $j = Get-Content $f.FullName -Raw | ConvertFrom-Json } catch { }
+    Say ("    {0}  v{1}  {2}" -f $f.Name, $j.version, $j.installed)
+  }
+  Say ''
+  Say '  ===== end of report =====' 'Cyan'
+  Say ''
+  Finish 0 @{ ok = $true; status = 'diagnose' }
 }
 
 # Ask which terminal to target when more than one is present, rather than

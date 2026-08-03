@@ -182,6 +182,13 @@ $cbForce.Location = New-Object Drawing.Point(400, 8)
 $cbForce.ForeColor = $DIM
 $ctl.Controls.Add($cbForce)
 
+$btnDiag = New-Object Windows.Forms.Button
+$btnDiag.Text = 'Diagnose'; $btnDiag.Width = 96
+$btnDiag.Location = New-Object Drawing.Point(506, 2)
+$btnDiag.Anchor = 'Top,Right'
+Style-Button $btnDiag $PLC
+$ctl.Controls.Add($btnDiag)
+
 $btnFolder = New-Object Windows.Forms.Button
 $btnFolder.Text = 'Open folder'; $btnFolder.Width = 100
 $btnFolder.Location = New-Object Drawing.Point(616, 2)
@@ -555,6 +562,24 @@ function Do-Update {
 $btnCheck.Add_Click({ Do-Check })
 $btnUpdate.Add_Click({ Do-Update })
 $btnRename.Add_Click({ if (-not $script:busy) { Rename-Terminal } })
+# One button, one block of text to send back. Copies itself to the clipboard
+# so support is "click Diagnose, paste" rather than a list of steps to follow.
+$btnDiag.Add_Click({
+  if ($script:busy) { return }
+  Set-Busy $true 'Collecting a support report...'
+  Set-Banner 'Collecting a support report...' $BLUE ([Drawing.Color]::White)
+  $log.Clear()
+  $extra = @('-Diagnose')
+  if ($script:terminalDir) { $extra += @('-TerminalDir', $script:terminalDir) }
+  Invoke-Worker $extra | Out-Null
+  Set-Busy $false ''
+  try {
+    [Windows.Forms.Clipboard]::SetText($log.Text)
+    Set-Banner 'Report copied to the clipboard - paste it to whoever is helping' $GREEN ([Drawing.Color]::White)
+  } catch {
+    Set-Banner 'Report ready below - select it and copy' $GREEN ([Drawing.Color]::White)
+  }
+})
 $btnFolder.Add_Click({
   $target = $(if ($script:expertsDir -and (Test-Path $script:expertsDir)) { $script:expertsDir } else { $here })
   Start-Process explorer.exe $target
