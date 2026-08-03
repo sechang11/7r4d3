@@ -39,7 +39,11 @@ const CONTRACT_VERSION = '6.09';
 
 // Shared secret guarding every /api/* route. Set RM_TOKEN in the environment
 // (never in source). Both the EA and the browser must present it.
-const RM_TOKEN = process.env.RM_TOKEN ?? '';
+// .trim() matters: presentedToken() trims what arrives, so an env var carrying
+// a trailing newline or space - trivially easy when pasting into a hosting
+// dashboard - would make the lengths differ and 401 every single request, with
+// nothing on either side to show why.
+const RM_TOKEN = (process.env.RM_TOKEN ?? '').trim();
 
 // Railway and similar platforms have an EPHEMERAL filesystem — anything under
 // the app directory is wiped on redeploy. Point RM_DATA_DIR at a mounted
@@ -597,7 +601,9 @@ server.listen(PORT, HOST, () => {
   console.log(`contract version    →  ${CONTRACT_VERSION}`);
   console.log(`data dir            →  ${DATA_DIR}`);
   console.log(`environment         →  ${ON_PAAS ? 'PaaS detected — bound to all interfaces' : 'local'}`);
-  console.log(`auth                →  ${RM_TOKEN ? 'ON (RM_TOKEN set)' : 'OFF — loopback only'}`);
+  // Length only, never the value. Enough to spot a truncated or newline-padded
+  // paste against what you think you set, without putting the secret in a log.
+  console.log(`auth                →  ${RM_TOKEN ? `ON (RM_TOKEN set, ${RM_TOKEN.length} chars)` : 'OFF — loopback only'}`);
   if (!RM_TOKEN) {
     console.log('');
     console.log('  Running without auth. Safe here because the socket is bound to');

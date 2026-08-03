@@ -318,12 +318,26 @@ try {
   $code = $null
   try { $code = [int]$_.Exception.Response.StatusCode } catch { }
   if ($code -eq 401) {
+    # Length and shape only - never the token itself. Comparing this against
+    # the "token set (N chars)" the server logs at startup catches the common
+    # causes without either side printing a secret.
+    $t = [string]$cfg.token
+    $shape = if ($t.Length -eq 0) { 'empty' }
+             else {
+               $pad = if ($t -ne $t.Trim()) { ', HAS LEADING/TRAILING WHITESPACE' } else { '' }
+               "$($t.Length) chars, starts '$($t.Substring(0,[Math]::Min(3,$t.Length)))'$pad"
+             }
     Die ("the bridge rejected your token.`n" +
          "  $($cfg.bridgeUrl) answered, so the connection is fine - the token is wrong.`n" +
-         "  Fix: open the dashboard, enter your RM_TOKEN, and use its`n" +
-         "       'updater.config.json' button - it writes the URL and token for you.`n" +
-         "  Or paste RM_TOKEN from your host's service variables into`n" +
-         "       $configPath")
+         "  Sending: $shape`n" +
+         "  Compare that with the 'token set (N chars)' line in the server's`n" +
+         "  startup log. Same length but still refused = different value;`n" +
+         "  different length = truncated, padded, or the wrong deployment.`n" +
+         "`n" +
+         "  Easiest fix: open the dashboard, enter your RM_TOKEN, and use its`n" +
+         "  'updater.config.json' button - it writes the URL and token for you.`n" +
+         "  Otherwise paste RM_TOKEN from your host's service variables into`n" +
+         "  $configPath")
   }
   Die "could not reach the bridge - $($_.Exception.Message)"
 }
