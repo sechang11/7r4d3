@@ -338,7 +338,7 @@ if (-not (Test-Path $configPath)) {
   # NOTE: `if` is a statement, not an expression, so it must be wrapped in
   # $( ) to be used as a hashtable value - otherwise this fails to parse.
   @{
-    bridgeUrl      = 'https://7r4d3.up.railway.app'
+    bridgeUrl      = 'https://7r4d3.net'
     token          = ''
     metaEditorPath = $(if ($editor) { $editor } else { '' })
     terminalDataDir= $(if ($dataDirs) { @($dataDirs)[0] } else { '' })

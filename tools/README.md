@@ -14,7 +14,7 @@ token, confirm the paths, run it again.
 
 ```json
 {
-  "bridgeUrl":       "https://7r4d3.up.railway.app",
+  "bridgeUrl":       "https://7r4d3.net",
   "token":           "<your RM_TOKEN>",
   "metaEditorPath":  "C:\\Program Files\\MetaTrader 5\\MetaEditor64.exe",
   "terminalDataDir": "C:\\Users\\you\\AppData\\Roaming\\MetaQuotes\\Terminal\\<hash>"
@@ -158,3 +158,20 @@ the dashboard you can do the whole install by hand:
 
 That is exactly what the updater automates. If PowerShell is blocked on a
 locked-down machine and cannot be unblocked, this path is unaffected.
+
+## Why the bridge is behind Cloudflare
+
+`https://7r4d3.net` is a Cloudflare-proxied CNAME to the Railway service. The
+app still runs on Railway — this is a proxy, not a migration.
+
+It exists because a client in Korea could not reach Railway's IP over TCP at
+all: the socket opened, then every TLS handshake timed out, in curl and in
+.NET alike, with any hostname. His browser worked only because Chrome falls
+back to HTTP/3 over UDP, which the filter ignored — and MT5's `WebRequest`
+cannot do that, so his EA had no bridge either.
+
+Proxying moves the destination onto Cloudflare's IPs (`104.21.x`, `172.67.x`)
+instead of Railway's `69.46.46.109`, which that network does allow.
+
+Both hostnames still work. The Railway URL is a fallback if Cloudflare ever
+misbehaves mid-session.
