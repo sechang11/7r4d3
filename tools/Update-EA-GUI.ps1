@@ -53,7 +53,7 @@ $fontMono= New-Object Drawing.Font('Consolas', 9)
 # ── window ──────────────────────────────────────────────────────────
 $form = New-Object Windows.Forms.Form
 $form.Text            = 'RiskManager - EA updater'
-$form.Size            = New-Object Drawing.Size(760, 700)
+$form.Size            = New-Object Drawing.Size(760, 740)
 $form.MinimumSize     = New-Object Drawing.Size(680, 560)
 $form.StartPosition   = 'CenterScreen'
 $form.BackColor       = $BG
@@ -85,7 +85,7 @@ $form.Controls.Add($banner)
 # -- facts panel -----------------------------------------------------
 $facts = New-Object Windows.Forms.Panel
 $facts.Location  = New-Object Drawing.Point(14, 76)
-$facts.Size      = New-Object Drawing.Size(716, 172)
+$facts.Size      = New-Object Drawing.Size(716, 206)
 $facts.BackColor = $PANEL
 $facts.Anchor    = 'Top,Left,Right'
 $form.Controls.Add($facts)
@@ -139,9 +139,44 @@ $btnRename.BackColor = $PLC; $btnRename.ForeColor = [Drawing.Color]::White
 $btnRename.FlatAppearance.BorderColor = $BORDER
 $facts.Controls.Add($btnRename)
 
+# -- EA filename ------------------------------------------------------
+# MetaTrader identifies an expert by its filename, and its server-side journal
+# can record it. A different name per machine stops that being a handle that
+# links accounts. Blank means RiskManager.
+$lblEa = New-Object Windows.Forms.Label
+$lblEa.Text = 'EA name'; $lblEa.ForeColor = $DIM
+$lblEa.Location = New-Object Drawing.Point(14, 170)
+$lblEa.Size = New-Object Drawing.Size(130, 22)
+$facts.Controls.Add($lblEa)
+
+$txtEa = New-Object Windows.Forms.TextBox
+$txtEa.Location  = New-Object Drawing.Point(150, 166)
+$txtEa.Size      = New-Object Drawing.Size(200, 24)
+$txtEa.BackColor = $PLC; $txtEa.ForeColor = [Drawing.Color]::White
+$txtEa.BorderStyle = 'FixedSingle'
+$facts.Controls.Add($txtEa)
+
+$btnEa = New-Object Windows.Forms.Button
+$btnEa.Text = 'Apply'; $btnEa.Width = 70; $btnEa.Height = 26
+$btnEa.Location = New-Object Drawing.Point(358, 165)
+$btnEa.FlatStyle = 'Flat'
+$btnEa.BackColor = $PLC; $btnEa.ForeColor = [Drawing.Color]::White
+$btnEa.FlatAppearance.BorderColor = $BORDER
+$facts.Controls.Add($btnEa)
+
+$lblEaNote = New-Object Windows.Forms.Label
+$lblEaNote.Text = 'blank = RiskManager'
+$lblEaNote.ForeColor = $DIM
+$lblEaNote.Location = New-Object Drawing.Point(436, 170)
+$lblEaNote.Size = New-Object Drawing.Size(266, 22)
+$lblEaNote.Anchor = 'Top,Left,Right'
+$tipEa = New-Object Windows.Forms.ToolTip
+$tipEa.SetToolTip($txtEa, "Installs and compiles the EA under this filename.`nMetaTrader's server-side journal can record the expert's name, so a`ndifferent one per machine removes that as a shared handle.")
+$facts.Controls.Add($lblEaNote)
+
 # -- controls --------------------------------------------------------
 $ctl = New-Object Windows.Forms.Panel
-$ctl.Location  = New-Object Drawing.Point(14, 260)
+$ctl.Location  = New-Object Drawing.Point(14, 294)
 $ctl.Size      = New-Object Drawing.Size(716, 40)
 $ctl.BackColor = [Drawing.Color]::Transparent
 $ctl.Anchor    = 'Top,Left,Right'
@@ -177,14 +212,14 @@ $cbPlatform.FlatStyle = 'Flat'
 $ctl.Controls.Add($cbPlatform)
 
 $cbForce = New-Object Windows.Forms.CheckBox
-$cbForce.Text = 'Force reinstall'; $cbForce.Width = 120
-$cbForce.Location = New-Object Drawing.Point(400, 8)
+$cbForce.Text = 'Force reinstall'; $cbForce.Width = 104
+$cbForce.Location = New-Object Drawing.Point(396, 8)
 $cbForce.ForeColor = $DIM
 $ctl.Controls.Add($cbForce)
 
 $btnDiag = New-Object Windows.Forms.Button
 $btnDiag.Text = 'Diagnose'; $btnDiag.Width = 96
-$btnDiag.Location = New-Object Drawing.Point(506, 2)
+$btnDiag.Location = New-Object Drawing.Point(508, 2)
 $btnDiag.Anchor = 'Top,Right'
 Style-Button $btnDiag $PLC
 $ctl.Controls.Add($btnDiag)
@@ -197,9 +232,9 @@ Style-Button $btnFolder $PLC
 $ctl.Controls.Add($btnFolder)
 
 # -- log -------------------------------------------------------------
-New-Label 'LOG' 14 310 60 16 $DIM $null | Out-Null
+New-Label 'LOG' 14 344 60 16 $DIM $null | Out-Null
 $log = New-Object Windows.Forms.RichTextBox
-$log.Location   = New-Object Drawing.Point(14, 330)
+$log.Location   = New-Object Drawing.Point(14, 364)
 $log.Size       = New-Object Drawing.Size(716, 288)
 $log.BackColor  = $PLC
 $log.ForeColor  = $DIM
@@ -209,7 +244,7 @@ $log.BorderStyle= 'None'
 $log.Anchor     = 'Top,Left,Right,Bottom'
 $form.Controls.Add($log)
 
-$status = New-Label '' 14 626 716 20 $DIM $null
+$status = New-Label '' 14 660 716 20 $DIM $null
 $status.Anchor = 'Bottom,Left,Right'
 
 # ── plumbing ────────────────────────────────────────────────────────
@@ -466,6 +501,7 @@ function Do-Check {
   $vInstalled.Text = $(if ($res.installedVersion) { "v$($res.installedVersion)   $($res.installedSha)" } else { 'not installed by this updater' })
   $vAvailable.Text = "v$($res.availableVersion)   $($res.availableSha)   $([math]::Round($res.bytes/1KB)) KB"
   $vTerminal.Text  = $res.expertsDir
+  if (-not $txtEa.Focused) { $txtEa.Text = $(if ($res.eaName -and $res.eaName -ne 'RiskManager') { $res.eaName } else { '' }) }
   $vBridge.Text    = $res.bridgeUrl
   # Keep the dropdown in step when the worker resolved a terminal we didn't pick
   # (single install, or one written into the config on a previous run).
@@ -561,6 +597,22 @@ function Do-Update {
 
 $btnCheck.Add_Click({ Do-Check })
 $btnUpdate.Add_Click({ Do-Update })
+$btnEa.Add_Click({
+  if ($script:busy) { return }
+  Set-Busy $true 'Setting the EA name...'
+  $name = $txtEa.Text.Trim()
+  if ($name -eq '') { $name = 'RiskManager' }
+  $r = Invoke-Worker @('-SetEaName', $name, '-NoSelfUpdate')
+  Set-Busy $false ''
+  if ($r.Result -and $r.Result.ok) {
+    Write-Log "  EA will install as $($r.Result.eaName).mq5" $GREEN
+    Do-Check
+  } else {
+    Write-Log '  Could not set the EA name - see above.' $RED
+  }
+})
+$txtEa.Add_KeyDown({ if ($_.KeyCode -eq 'Enter') { $btnEa.PerformClick() } })
+
 $btnRename.Add_Click({ if (-not $script:busy) { Rename-Terminal } })
 # One button, one block of text to send back. Copies itself to the clipboard
 # so support is "click Diagnose, paste" rather than a list of steps to follow.

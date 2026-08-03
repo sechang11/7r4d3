@@ -27,7 +27,8 @@ param(
   [string] $TerminalDir = '',  # override the configured terminal data folder
   [switch] $ListTerminals,     # enumerate installations and exit
   [string] $SetNickname = '',  # name the -TerminalDir installation and exit
-  [switch] $Diagnose           # print a support report and exit; changes nothing
+  [switch] $Diagnose,          # print a support report and exit; changes nothing
+  [string] $SetEaName = ''     # write eaName into the config and exit
 )
 
 $ErrorActionPreference = 'Stop'
@@ -142,6 +143,21 @@ if ($ListTerminals) {
          hasEa = $_.HasEa; hasMq5 = $_.HasMq5; hasMq4 = $_.HasMq4 }
     })
   }
+}
+
+if ($SetEaName) {
+  if (-not (Test-Path $configPath)) { Die "no config yet - run a check first ($configPath)" }
+  # Only what a filename can carry. 'default' clears it back to RiskManager.
+  $clean = ($SetEaName -replace '[^A-Za-z0-9_\- ]', '').Trim()
+  $c = Get-Content $configPath -Raw | ConvertFrom-Json
+  if ($clean -eq '' -or $clean -eq 'RiskManager') {
+    if ($c.PSObject.Properties.Name -contains 'eaName') { $c.PSObject.Properties.Remove('eaName') }
+    $clean = 'RiskManager'
+  } elseif ($c.PSObject.Properties.Name -contains 'eaName') { $c.eaName = $clean }
+  else { $c | Add-Member -NotePropertyName eaName -NotePropertyValue $clean -Force }
+  $c | ConvertTo-Json -Depth 6 | Set-Content $configPath -Encoding UTF8
+  Say "  EA name -> $clean" 'Green'
+  Finish 0 @{ ok = $true; status = 'eaname'; eaName = $clean }
 }
 
 if ($SetNickname) {
@@ -610,6 +626,7 @@ if ($CheckOnly) {
     bridgeUrl        = $cfg.bridgeUrl
     metaEditor       = $cfg.metaEditorPath
     terminalDir      = $cfg.terminalDataDir
+    eaName           = $eaName
     terminalNickname = (Get-TerminalLabel $cfg.terminalDataDir).Nickname
     terminalInstall  = (Get-TerminalLabel $cfg.terminalDataDir).Install
     liveKnown        = $liveKnown
