@@ -894,13 +894,19 @@ $('getCfg').onclick = () => {
     metaEditorPath: '',
     terminalDataDir: '',
   };
+  // Per-client EA filename. MetaTrader's server-side journal can record the
+  // expert's name, so a distinct one per machine stops that being a handle
+  // that links accounts together. Strip anything a filename cannot carry.
+  const eaName = $('cfgEaName').value.trim().replace(/[^A-Za-z0-9_\- ]/g, '');
+  if (eaName) cfg.eaName = eaName;
   const blob = new Blob([JSON.stringify(cfg, null, 4)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url; a.download = 'updater.config.json';
   document.body.appendChild(a); a.click(); a.remove();
   URL.revokeObjectURL(url);
-  $('srcMsg').textContent = 'Saved updater.config.json (bridge URL and token filled in). Keep it private.';
+  $('srcMsg').textContent = 'Saved updater.config.json (bridge URL and token filled in'
+    + (eaName ? `, EA name ${eaName}` : '') + '). Keep it private.';
 };
 
 $('srcGet5').onclick = () => downloadSource('mq5');
