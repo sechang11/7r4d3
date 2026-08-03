@@ -233,6 +233,17 @@ if ($Diagnose) {
       else { D 'proxy' 'none (direct)' }
     } catch { D 'proxy' "could not determine - $($_.Exception.Message)" }
 
+    try {
+      $ie = Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings' -EA SilentlyContinue
+      if ($ie.ProxyEnable -eq 1 -and $ie.ProxyServer) {
+        D 'windows proxy' "$($ie.ProxyServer)  <-- add this as \"proxyUrl\" in updater.config.json"
+      } elseif ($ie.AutoConfigURL) {
+        D 'windows proxy' "PAC script: $($ie.AutoConfigURL)  (open it to find the host:port)"
+      } else {
+        D 'windows proxy' 'not configured'
+      }
+    } catch { D 'windows proxy' 'could not read' }
+
     # No token needed - separates "server down / unreachable" from "token wrong".
     try {
       $h = Invoke-RestMethod "$($cfgD.bridgeUrl)/api/health" -UseBasicParsing -TimeoutSec 20
@@ -422,6 +433,17 @@ if (-not (Test-Path $expertsDir)) {
 
 $headers  = @{ Authorization = "Bearer $($cfg.token)" }
 
+# Browsers often reach the internet through a proxy that PowerShell does not
+# inherit - which looks exactly like the network being down, because the
+# packets are simply dropped. Set "proxyUrl" in the config to route through it;
+# leave it out and nothing changes.
+$web = @{}
+if ($cfg.PSObject.Properties.Name -contains 'proxyUrl' -and $cfg.proxyUrl) {
+  $web['Proxy'] = $cfg.proxyUrl
+  $web['ProxyUseDefaultCredentials'] = $true
+  Say "  Proxy  : $($cfg.proxyUrl)"
+}
+
 # The EA may be installed under any name. MT's server-side journal can record
 # the expert's filename, so a distinctive one is a handle across accounts;
 # set "eaName" in the config to install it as something else. Nothing in the
@@ -445,7 +467,7 @@ Say "  Target : $expertsDir"
 if ($eaName -ne 'RiskManager') { Say "  Name   : $eaName.$Platform" }
 Say ''
 try {
-  $all  = (Invoke-RestMethod "$($cfg.bridgeUrl)/api/source" -Headers $headers -TimeoutSec 20).sources
+  $all  = (Invoke-RestMethod "$($cfg.bridgeUrl)/api/source" -Headers $headers -TimeoutSec 20 @web).sources
   $meta = $all.$Platform
 } catch {
   # A 401 is not a connectivity problem - the bridge answered, it just refused
@@ -489,7 +511,7 @@ if (-not $NoSelfUpdate -and $all.ps1 -and $all.ps1.available) {
     Say ''
     Say "  Updater itself is out of date ($mySha -> $($all.ps1.sha256)) - updating." 'Yellow'
     $tmpPs = Join-Path $env:TEMP 'Update-EA.new.ps1'
-    Invoke-WebRequest "$($cfg.bridgeUrl)/api/source/ps1" -Headers $headers -UseBasicParsing -OutFile $tmpPs -TimeoutSec 60
+    Invoke-WebRequest "$($cfg.bridgeUrl)/api/source/ps1" -Headers $headers -UseBasicParsing -OutFile $tmpPs -TimeoutSec 60 @web
     # Sanity-check before overwriting ourselves: a truncated or error-body
     # download must not be able to brick the updater.
     $err = $null
@@ -527,7 +549,7 @@ function Sync-Companion($key, $fileName) {
   if (Test-Path $dest) { $have = (Get-FileHash $dest -Algorithm SHA256).Hash.Substring(0, 12).ToLower() }
   if ($have -eq $all.$key.sha256) { return }
   try {
-    Invoke-WebRequest "$($cfg.bridgeUrl)/api/source/$key" -Headers $headers -UseBasicParsing -OutFile $dest -TimeoutSec 60
+    Invoke-WebRequest "$($cfg.bridgeUrl)/api/source/$key" -Headers $headers -UseBasicParsing -OutFile $dest -TimeoutSec 60 @web
     Say "  $(if ($have) { 'Updated' } else { 'Installed' }) $fileName" 'Green'
   } catch {
     # A running GUI holds its own .ps1 open; that is not worth failing over.
@@ -561,7 +583,7 @@ $upToDate = ($installed -and $installed.sha256 -eq $meta.sha256)
 # With many instances on one account, sum across every symbol posting.
 $open = 0; $mtx = 0; $armedCount = 0; $liveKnown = $false
 try {
-  $snap = Invoke-RestMethod "$($cfg.bridgeUrl)/api/state" -Headers $headers -TimeoutSec 10
+  $snap = Invoke-RestMethod "$($cfg.bridgeUrl)/api/state" -Headers $headers -TimeoutSec 10 @web
   $rows = @($snap.instances)
   if ($rows.Count -gt 0) {
     $liveKnown = $true
@@ -636,7 +658,7 @@ Say "  Backed up to $backupDir"
 # -- download -------------------------------------------------------
 Say '  Downloading...'
 $tmp = Join-Path $env:TEMP "RiskManager.$Platform.new"
-Invoke-WebRequest "$($cfg.bridgeUrl)/api/source/$Platform" -Headers $headers -UseBasicParsing -OutFile $tmp -TimeoutSec 60
+Invoke-WebRequest "$($cfg.bridgeUrl)/api/source/$Platform" -Headers $headers -UseBasicParsing -OutFile $tmp -TimeoutSec 60 @web
 if ((Get-Item $tmp).Length -lt 10000) { Die 'downloaded file is implausibly small - aborting' }
 Copy-Item $tmp $srcFile -Force
 Remove-Item $tmp -Force
@@ -686,7 +708,7 @@ if ($errs -or -not $result -or $result -notmatch '0 error') {
 # if anything re-encodes it on the way in.
 if ($Platform -eq 'mq5') {
   try {
-    $tplMeta = (Invoke-RestMethod "$($cfg.bridgeUrl)/api/source" -Headers $headers -TimeoutSec 20).sources.tpl
+    $tplMeta = (Invoke-RestMethod "$($cfg.bridgeUrl)/api/source" -Headers $headers -TimeoutSec 20 @web).sources.tpl
     if ($tplMeta.available) {
       $tplDir = Join-Path $mqlDir 'Profiles\Templates'
       if (Test-Path $tplDir) {
@@ -694,7 +716,7 @@ if ($Platform -eq 'mq5') {
         if (Test-Path $tplPath) {
           Copy-Item $tplPath (Join-Path $backupDir "$stamp-default.tpl") -Force
         }
-        Invoke-WebRequest "$($cfg.bridgeUrl)/api/source/tpl" -Headers $headers -UseBasicParsing -OutFile $tplPath -TimeoutSec 60
+        Invoke-WebRequest "$($cfg.bridgeUrl)/api/source/tpl" -Headers $headers -UseBasicParsing -OutFile $tplPath -TimeoutSec 60 @web
         Say "  Installed default.tpl into $tplDir" 'Green'
       }
     }

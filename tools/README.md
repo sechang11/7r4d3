@@ -130,3 +130,31 @@ name. Use a different one per machine if it matters.
 EA name). A single shared marker used to report "up to date" for a terminal
 that had never been written to, which is exactly how a two-month-old binary
 went unnoticed on a second install.
+
+## When the browser can reach the bridge but the updater cannot
+
+A machine where `https://<bridge>/api/health` loads in a browser but times out
+in PowerShell is not a network fault — it is PowerShell specifically being
+blocked or routed differently. Run `-Diagnose` and read the network block top
+to bottom; the first line that fails is the fault.
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `tcp connect TIMED OUT` | the port is blocked outright | firewall / endpoint security rule |
+| `tcp connect OK` but `health FAILED` | something is intercepting the TLS session | inspecting antivirus, or a proxy |
+| `windows proxy <host:port>` | the browser uses a proxy PowerShell ignores | add `"proxyUrl": "http://host:port"` to `updater.config.json` |
+| `windows proxy PAC script: …` | proxy is auto-configured | open the PAC URL, find the host:port, set `proxyUrl` |
+
+### The fallback that always works
+
+The updater is a convenience, not the only path. With a browser that can reach
+the dashboard you can do the whole install by hand:
+
+1. Open the dashboard, enter the token
+2. **EA source** card → **Download .mq5**
+3. Save it into that terminal's `MQL5\Experts` folder
+4. Open it in MetaEditor and press **F7**
+5. Drag the EA onto a chart
+
+That is exactly what the updater automates. If PowerShell is blocked on a
+locked-down machine and cannot be unblocked, this path is unaffected.
