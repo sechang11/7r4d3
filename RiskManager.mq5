@@ -3,7 +3,7 @@
 //|                                  Copyright 2026, MetaQuotes Ltd. |
 //|                                             https://www.mql5.com |
 //+------------------------------------------------------------------+
-#define RM_VERSION "6.09"
+#define RM_VERSION "6.10"
 
 #property copyright "Copyright 2026, MetaQuotes Ltd."
 #property link      "https://www.mql5.com"
@@ -33,6 +33,19 @@ input bool   InpAllowRemote  = false;// Allow remote ARM commands from the web a
 // setup - which only draws lines. This one lets it SEND the order. Keep it
 // off and the chart's Enter key stays the only thing that spends money.
 input bool   InpAllowRemoteExec = false;// Allow the web app to EXECUTE an armed setup
+
+//--- Execution footprint ---------------------------------------------
+// Two of the strongest automation tells are that lot size is a pure function
+// of risk and SL distance - so the same setup produces a byte-identical
+// volume every time - and that a split fires N tickets in the same
+// millisecond. See EXECUTION-FOOTPRINT.md, signatures 1 and 2.
+//
+// Risk is jittered DOWNWARD only, once per armed setup, so the figure you
+// set is never exceeded. The lots stay identical within a split, which is
+// what rapid-firing one size by hand actually looks like.
+input int    InpRiskJitterPct = 5;   // Jitter risk down by up to N% per setup (0 = off)
+input int    InpStaggerMinMs  = 200; // Min gap between split legs (0 = all at once)
+input int    InpStaggerMaxMs  = 2000;// Max gap between split legs
 input int    InpCmdPollSec   = 2;    // Seconds between command polls (when remote allowed)
 
 //--- Game-plan enforcement -------------------------------------------
@@ -6480,13 +6493,77 @@ double CalcSLDistance()
 }
 
 //+------------------------------------------------------------------+
+// Multiplier for this setup's risk. 0 means "not drawn yet"; it is redrawn
+// each time a setup is armed and cleared when one is abandoned or sent, so a
+// single setup never changes size under you between the panel and the fill.
+// Remaining legs of a split, sent on later ticks rather than in one loop.
+// Deliberately NOT Sleep(): OnTick also runs the exit/partials/BE/cancel
+// matrices, the equity guards and the hidden trail, and blocking it for
+// several seconds to look human would delay a stop on a position already
+// open. Cost of the queue is that legs stop if the EA is removed mid-send.
+int    g_legsLeft  = 0;
+double g_legLots   = 0;
+int    g_legType   = 0;
+int    g_legDir    = 0;
+double g_legEntry  = 0, g_legSl = 0, g_legTp = 0;
+ulong  g_legDueAt  = 0;      // GetTickCount64() target for the next leg
+
+int StaggerGapMs()
+{
+   int lo = MathMax(InpStaggerMinMs, 0);
+   int hi = MathMax(InpStaggerMaxMs, lo);
+   if(hi <= 0) return 0;
+   return lo + (MathRand() % (hi - lo + 1));
+}
+
+bool SendOneLeg(int type, int dir, double lots, double entry, double sl, double tp)
+{
+   string comment = "";
+   if(type == 0)
+      return dir > 0 ? g_trade.Buy(lots, _Symbol, 0, sl, tp, comment)
+                     : g_trade.Sell(lots, _Symbol, 0, sl, tp, comment);
+   if(type == 1)
+      return dir > 0 ? g_trade.BuyLimit(lots, entry, _Symbol, sl, tp, ORDER_TIME_GTC, 0, comment)
+                     : g_trade.SellLimit(lots, entry, _Symbol, sl, tp, ORDER_TIME_GTC, 0, comment);
+   return dir > 0 ? g_trade.BuyStop(lots, entry, _Symbol, sl, tp, ORDER_TIME_GTC, 0, comment)
+                  : g_trade.SellStop(lots, entry, _Symbol, sl, tp, ORDER_TIME_GTC, 0, comment);
+}
+
+void ClearPendingLegs() { g_legsLeft = 0; g_legDueAt = 0; }
+
+// Cheap enough to call every tick: one comparison when nothing is queued.
+void ProcessPendingLegs()
+{
+   if(g_legsLeft <= 0) return;
+   if(GetTickCount64() < g_legDueAt) return;
+   bool ok = SendOneLeg(g_legType, g_legDir, g_legLots, g_legEntry, g_legSl, g_legTp);
+   g_legsLeft--;
+   if(!ok) Print("RiskManager: split leg failed, ", g_legsLeft, " remaining.");
+   if(g_legsLeft > 0) g_legDueAt = GetTickCount64() + StaggerGapMs();
+}
+
+double g_riskJitter = 0;
+
+double EffectiveRisk()
+{
+   double base = g_riskValues[g_riskIndex];
+   if(InpRiskJitterPct <= 0) return base;
+   if(g_riskJitter <= 0)
+   {
+      // Down only, to a hundredth of a percent. Never above what you set.
+      int span = InpRiskJitterPct * 100;
+      g_riskJitter = 1.0 - ((MathRand() % (span + 1)) / 10000.0);
+   }
+   return base * g_riskJitter;
+}
+
 double CalcLotSize(double slDistance)
 {
    if(slDistance <= 0) return 0;
    double tickSize  = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
    double tickValue = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE);
    if(tickSize <= 0 || tickValue <= 0) return 0;
-   double riskMoney  = g_riskValues[g_riskIndex];
+   double riskMoney  = EffectiveRisk();
    double lossPerlot = (slDistance / tickSize) * tickValue;
    if(lossPerlot <= 0) return 0;
    double lots    = riskMoney / lossPerlot;
@@ -6533,6 +6610,7 @@ void PlaceOrderLines(double entry, double sl, double tp)
    ObjectSetInteger(0, g_slLineName, OBJPROP_SELECTED, true);
    ObjectSetString(0, g_slLineName, OBJPROP_TEXT, "Stop Loss");
 
+   g_riskJitter  = 0;      // fresh draw for this setup
    g_linesActive = true;
    g_slManualOverride = false;
    UpdateInfoLabel();
@@ -6663,37 +6741,31 @@ void ExecuteTrade()
    if(splitLots < lotMin) splitLots = lotMin;
    splitLots = NormalizeDouble(splitLots, 8);
 
+   // First leg goes now; the rest are queued and sent on later ticks, so a
+   // split stops arriving as N tickets in the same millisecond.
    int successCount = 0;
    int failCount    = 0;
-   for(int s = 0; s < splitCount; s++)
+   if(SendOneLeg(g_orderType, g_orderDir, splitLots, entry, sl, tp)) successCount++;
+   else                                                             failCount++;
+
+   if(splitCount > 1)
    {
-      bool result = false;
-      string comment = "";
-
-      if(g_orderType == 0)
+      g_legLots  = splitLots;  g_legType = g_orderType;  g_legDir = g_orderDir;
+      g_legEntry = entry;      g_legSl   = sl;           g_legTp  = tp;
+      g_legsLeft = splitCount - 1;
+      int gap    = StaggerGapMs();
+      g_legDueAt = GetTickCount64() + gap;
+      if(gap == 0)
       {
-         if(g_orderDir > 0)
-            result = g_trade.Buy(splitLots, _Symbol, 0, sl, tp, comment);
-         else
-            result = g_trade.Sell(splitLots, _Symbol, 0, sl, tp, comment);
+         // Stagger disabled - behave exactly as before.
+         while(g_legsLeft > 0)
+         {
+            if(SendOneLeg(g_legType, g_legDir, g_legLots, g_legEntry, g_legSl, g_legTp)) successCount++;
+            else                                                                        failCount++;
+            g_legsLeft--;
+         }
       }
-      else if(g_orderType == 1)
-      {
-         if(g_orderDir > 0)
-            result = g_trade.BuyLimit(splitLots, entry, _Symbol, sl, tp, ORDER_TIME_GTC, 0, comment);
-         else
-            result = g_trade.SellLimit(splitLots, entry, _Symbol, sl, tp, ORDER_TIME_GTC, 0, comment);
-      }
-      else
-      {
-         if(g_orderDir > 0)
-            result = g_trade.BuyStop(splitLots, entry, _Symbol, sl, tp, ORDER_TIME_GTC, 0, comment);
-         else
-            result = g_trade.SellStop(splitLots, entry, _Symbol, sl, tp, ORDER_TIME_GTC, 0, comment);
-      }
-
-      if(result) successCount++;
-      else       failCount++;
+      else Print("RiskManager: ", g_legsLeft, " more leg(s) queued, first in ", gap, " ms");
    }
 
    if(successCount > 0)
@@ -8933,6 +9005,8 @@ bool DisarmSetup()
    g_chochOrderActive = false;
    g_lastOrderBtn     = "";
    g_slManualOverride = false;
+   g_riskJitter       = 0;
+   ClearPendingLegs();
    ClearInfoLabel();
    RefreshDisarmBtn();
    ChartRedraw(0);
@@ -11185,6 +11259,7 @@ void OnTick()
    // UpdateAutoOrder();  // [deprecated] superseded by 3-sec-throttled RerunArmedOrder
    RerunArmedOrder();    // 3-sec intra-bar throttle so all armed orders track price
    CheckHiddenTrail();
+   ProcessPendingLegs();   // queued split legs, never Sleep()
 }
 
 //+------------------------------------------------------------------+

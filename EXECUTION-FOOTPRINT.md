@@ -56,6 +56,25 @@ Ranked by how strongly each reads as automated.
 | 9 | **Round risk amounts** — $500 / $1,000 / $1,500 produce suspiciously tidy risk-per-trade | `g_riskValues[]` | 🟢 Weak but free to fix |
 | 10 | **EA filename may appear in the broker's server-side journal** | — | 🟢 Weak; rename if it matters |
 
+### Done in 6.10
+
+| Was | Now |
+|---|---|
+| #1 Split fires N identical tickets in the same millisecond | first leg sends immediately, the rest are queued and sent on later ticks `InpStaggerMinMs`–`InpStaggerMaxMs` apart (200–2000 ms default) |
+| #2 `floor(risk / lossPerLot)` ⇒ byte-identical volume for the same setup | risk is jittered **downward** by 0–`InpRiskJitterPct`% (5% default), drawn once per armed setup. On $1500 that is 1425–1500, and turns one lot size into ~500 |
+
+Lots stay **identical within a split** on purpose. Jittering them would model
+a behaviour that does not exist — by hand you pick one size and rapid-fire, so
+equal legs at staggered times is the honest imitation.
+
+The stagger is a queue, **not `Sleep()`**. `OnTick` also runs the exit/partials/
+BE/cancel matrices, the equity guards and the hidden trail; blocking it for
+seconds to look human would delay a stop on a position already open. The cost
+of the queue is that unsent legs are dropped if the EA is removed mid-send.
+
+Both are opt-out: `InpRiskJitterPct = 0` and `InpStaggerMinMs = 0` restore the
+old behaviour exactly.
+
 ### Already mitigated
 
 | Signature | Status |
