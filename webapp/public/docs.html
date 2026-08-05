@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>RiskManager — Documentation</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="theme-color" content="#0e0e16">
+  <style>
+    .doc { display: grid; grid-template-columns: 232px 1fr; gap: 26px; align-items: start; }
+    .toc { position: sticky; top: 12px; align-self: start; font-size: 13px;
+           border: 1px solid var(--border); background: var(--section);
+           border-radius: 6px; padding: 12px 10px; max-height: 92vh; overflow: auto; }
+    .toc a { display: block; color: var(--dim); text-decoration: none; padding: 4px 8px; border-radius: 4px; }
+    .toc a:hover { color: #fff; background: var(--plc); }
+    .toc a.h3 { padding-left: 20px; font-size: 12px; }
+    .toc .grp { color: var(--gold); text-transform: uppercase; letter-spacing: .8px;
+                font-size: 10px; font-weight: 700; margin: 12px 8px 4px; }
+    .prose { max-width: 900px; }
+    .prose h2 { color: #fff; font-size: 20px; text-transform: none; letter-spacing: 0;
+                border-bottom: 1px solid var(--border); padding-bottom: 8px; margin: 34px 0 14px; }
+    .prose h2:first-child { margin-top: 0; }
+    .prose h3 { color: var(--gold); font-size: 15px; margin: 22px 0 8px; }
+    .prose p, .prose li { color: #d7d9e6; line-height: 1.65; }
+    .prose code { background: var(--plc); color: #ffd98a; padding: 1px 6px; border-radius: 3px; font-size: 13px; }
+    .prose table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13px; }
+    .prose th { text-align: left; color: var(--dim); text-transform: uppercase; font-size: 10px;
+                letter-spacing: .6px; border-bottom: 1px solid var(--border); padding: 6px 10px 6px 0; }
+    .prose td { padding: 7px 10px 7px 0; border-bottom: 1px solid var(--plc); vertical-align: top; }
+    .prose td:first-child { white-space: nowrap; }
+    .tag { display: inline-block; font-size: 10px; font-weight: 700; padding: 1px 7px;
+           border-radius: 3px; letter-spacing: .4px; }
+    .tag.auto   { background: var(--buy);  color: #fff; }
+    .tag.manual { background: var(--warn); color: #1a1206; }
+    .callout { border-left: 3px solid var(--gold); background: var(--section);
+               padding: 10px 14px; border-radius: 0 5px 5px 0; margin: 14px 0; }
+    .callout.todo { border-color: var(--warn); }
+    .callout.todo strong { color: #ffcf6b; }
+    .mono { font-family: Consolas, monospace; }
+    .pillrow { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0; }
+    .kv { display: inline-block; background: var(--plc); border: 1px solid var(--border);
+          border-radius: 4px; padding: 2px 8px; font-size: 12px; margin: 2px 4px 2px 0; }
+    .kv b { color: var(--gold); }
+    @media (max-width: 800px) {
+      .doc { grid-template-columns: 1fr; }
+      .toc { position: static; max-height: none; }
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>RISKMANAGER · DOCS</h1>
+    <div class="spacer"></div>
+    <a class="pill" href="/" style="text-decoration:none">← Dashboard</a>
+  </header>
+
+  <div class="doc">
+    <nav class="toc" id="toc"><!-- built from headings --></nav>
+
+    <main class="prose" id="prose">
+
+      <h2 id="overview">Overview</h2>
+      <p>RiskManager is a <strong>pre-committed game-plan trading system</strong>. The idea is to move the risk
+        decision out of the moment of temptation: you set a plan before the session, and the system enforces it
+        during. It has three parts that share one contract.</p>
+      <table>
+        <tr><th>Part</th><th>What it is</th><th>Where</th></tr>
+        <tr><td><b>MT5 EA</b></td><td>The engine and the hands — computes market structure, draws setups, sends orders, enforces the plan. The single source of truth.</td><td><code>RiskManager.mq5</code> / <code>.mq4</code></td></tr>
+        <tr><td><b>Web bridge</b></td><td>A zero-dependency Node server. Stores each EA's state, relays commands, hosts the dashboard and the journal.</td><td><code>webapp/server.mjs</code> → <code>7r4d3.net</code></td></tr>
+        <tr><td><b>Phone app</b></td><td>The dashboard installed as a PWA — same code, home-screen icon, push alerts.</td><td>Install from <code>7r4d3.net</code></td></tr>
+      </table>
+      <p class="callout">Design rule: <strong>the EA computes, the web app displays.</strong> No swing, trend or FVG is ever
+        recalculated in the browser — every value shown was computed by the EA and shipped in its state snapshot. One source of truth.</p>
+
+      <h2 id="journal">The Daily Journal</h2>
+      <p>The journal records what state each chart is in at set times through the day. You return to the charts at
+        those moments and log an observation per symbol. Some fields <span class="tag auto">AUTO</span> the EA can
+        compute and fill for you; others <span class="tag manual">MANUAL</span> are your judgement.</p>
+      <p>The old spreadsheet codes (T0, p, T1…) are renamed to be self-explanatory. The mapping and definitions below
+        are the working reference — <strong>the schema file <code>journal-schema.json</code> is the single source</strong>,
+        so correcting a definition there updates the table, the storage and this page's intent together.</p>
+
+      <h3 id="timeline">The day, in order</h3>
+      <table>
+        <tr><th>When (ET)</th><th>Field</th><th>Was</th><th>Src</th><th>What it records</th></tr>
+        <tr><td>daily close</td><td><b>Prior Day</b></td><td class="mono">T0:Type</td><td><span class="tag auto">AUTO</span></td><td>Type of yesterday's closed daily candle (G/Y/B/R).</td></tr>
+        <tr><td>new open</td><td><b>Flow Call</b></td><td class="mono">p:</td><td><span class="tag manual">MAN</span></td><td>Your prediction of which way flow breaks (u/d/i/o).</td></tr>
+        <tr><td>00:00</td><td><b>Stalk Hit</b></td><td class="mono">T1</td><td><span class="tag auto">AUTO</span></td><td>Did price reach the daily stalk zone (t/f).</td></tr>
+        <tr><td>07:00</td><td><b>Session Gap</b></td><td class="mono">T2</td><td><span class="tag auto">AUTO</span></td><td>Gap between price and the 19:45 session open (t/f).</td></tr>
+        <tr><td>09:00</td><td><b>Range Play</b></td><td class="mono">T3</td><td><span class="tag manual">MAN</span></td><td>How RTH will interact with the overnight range.</td></tr>
+        <tr><td>any time</td><td><b>HTF Break</b></td><td class="mono">x:</td><td><span class="tag auto">AUTO</span></td><td>Weekly / Mx high or low breached (xW / xMx).</td></tr>
+        <tr><td>12:00</td><td><b>Midday Call</b></td><td class="mono">T4</td><td><span class="tag manual">MAN</span></td><td>Predicted day-type outcome (G/Y/B/R).</td></tr>
+        <tr><td>end of day</td><td><b>Result</b></td><td class="mono">R</td><td><span class="tag auto">AUTO</span></td><td>Actual realised day type.</td></tr>
+        <tr><td>pre-session</td><td><b>Stance</b></td><td class="mono">Stance</td><td><span class="tag manual">MAN</span></td><td>The day's strategy — home run, base hits, preserve, manage.</td></tr>
+      </table>
+
+      <h3 id="priorday">Prior Day (was T0) — the daily candle type</h3>
+      <p>Fixed the moment yesterday's daily candle closes, comparing it with the candle before it:</p>
+      <div class="pillrow">
+        <span class="kv"><b>G</b> flow change — low of a prior up-close breached, or high of a prior down-close breached</span>
+        <span class="kv"><b>Y</b> against the flow, but did NOT change it</span>
+        <span class="kv"><b>B</b> with the flow (continuation)</span>
+        <span class="kv"><b>R</b> flow change AND closed-trend change</span>
+      </div>
+      <p>This maps cleanly onto the EA's two structural states: <code>tFlow</code> (micro direction) and
+        <code>tTrend</code> (bigger, set by break-of-structure). <b>G</b> is a <code>tFlow</code> flip;
+        <b>R</b> is <code>tFlow</code> and <code>tTrend</code> flipping together. Modifiers
+        (<span class="mono">! ? b c g</span> and compounds like <span class="mono">Y.G?</span>) are still to be defined.</p>
+
+      <h3 id="flowcall">Flow Call (was p) — your break prediction</h3>
+      <p>Made when the new daily candle opens. It predicts which way <em>flow</em> breaks, not where the candle closes:</p>
+      <div class="pillrow">
+        <span class="kv"><b>u</b> breaks the high (up)</span>
+        <span class="kv"><b>d</b> breaks the low (down)</span>
+        <span class="kv"><b>i</b> breaks neither (inside)</span>
+        <span class="kv"><b>o</b> breaks both (outside)</span>
+        <span class="kv">multiple letters = unsure, could be either</span>
+      </div>
+      <p>A candidate for a machine-learning prediction later; manual for now.</p>
+
+      <h3 id="rangeplay">Range Play (was T3) — RTH vs the overnight range</h3>
+      <p>At 09:00, before the 09:30 open: how will the day session interact with the overnight session's range?
+        <code>i</code> = internal, <code>e</code> = external.</p>
+      <div class="pillrow">
+        <span class="kv"><b>ii</b> stays inside the overnight range, never exits</span>
+        <span class="kv"><b>ie</b> into the internal range first, then breaks external</span>
+        <span class="kv"><b>ei</b> external, then internal</span>
+        <span class="kv"><b>ee</b> external</span>
+        <span class="kv"><b>eea</b> one external side to the other</span>
+        <span class="kv"><b>eeb</b> launches external and keeps going, never looking back</span>
+      </div>
+
+      <h3 id="other-journal">The other fields</h3>
+      <ul>
+        <li><b>Stalk Hit</b> (T1) — at midnight ET, did price trade into the daily stalk zone? Fires an alert. <span class="tag auto">AUTO</span></li>
+        <li><b>Session Gap</b> (T2) — at 07:00, is there a gap between price and the 19:45 session open? The EA already computes this (<code>S.GAP</code>). <span class="tag auto">AUTO</span></li>
+        <li><b>HTF Break</b> (x) — weekly or Mx high/low breached, recorded at most once per week, with an alert. <code>xW</code> / <code>xMx</code>. <span class="tag auto">AUTO</span></li>
+        <li><b>Midday Call</b> (T4) — around noon, predict today's day-type outcome (G/Y/B/R). <span class="tag manual">MANUAL</span></li>
+        <li><b>Result</b> (R) — today's realised day type, to score the Midday Call against. <span class="tag auto">AUTO</span></li>
+        <li><b>Stance</b> — the day's game plan: Offense / Neutral / Defense / Defended. <span class="tag manual">MANUAL</span></li>
+      </ul>
+      <p><b>Habits</b> (Sleep, Fuel, Exercise, Discipline, 0-10) and <b>Trade</b> (Forced? Reacted? Overleveraged?
+        Homerun?) round out each row.</p>
+      <p><b>Weekends:</b> only BTC and ETH stay editable; the 24×5 symbols hatch out.</p>
+
+      <h2 id="mt5">What MT5 Looks At</h2>
+      <p>The definitions the EA computes and the journal draws on. This section is my current understanding — flag
+        anything off and it gets corrected here. Deep detail lives in <code>TRADING_SYSTEM.md</code> and the Pine
+        source <code>ThrustStructure.pine</code>.</p>
+
+      <h3 id="flow">Flow &amp; Trend</h3>
+      <p><b>Flow</b> (<code>tFlow</code>) is the micro directional state from the thrust engine. Starting 'up', when
+        price breaks below the lowest low of the last 4 bars, flow flips to 'down' and the highest high since becomes
+        a <b>swing high</b>. In a 'down' flow, breaking above the last 4 bars' highest high flips flow to 'up' and the
+        lowest low becomes a <b>swing low</b>. A <b>flow change</b> is this flip.</p>
+      <p><b>Trend</b> (<code>tTrend</code>) is bigger, set by a <b>break of structure</b> (BOS) — price breaking a
+        confirmed swing. Flow flips often; trend flips only on a structural break.</p>
+      <div class="callout todo"><strong>To confirm:</strong> your Prior-Day <b>G</b> ("low of a prior up-close breached,
+        or high of a prior down-close breached") looks like the daily-resolution version of a flow change. Is flow, as
+        described here, what you mean by it?</div>
+
+      <h3 id="engines">The three engines</h3>
+      <table>
+        <tr><th>Engine</th><th>Timeframe</th><th>What it produces</th></tr>
+        <tr><td><b>M15 Thrust</b></td><td>15-minute</td><td>Pivots, thrusts, swing high/low, flow, trend, BOS vs CHOCH, dealing-range %. The primary structure engine.</td></tr>
+        <tr><td><b>H4 Thrust</b></td><td>4-hour</td><td>The same structure one level up, used for higher-timeframe agreement.</td></tr>
+        <tr><td><b>M5 Close-Trend</b></td><td>5-minute</td><td>The <code>ctrend</code> close-based trend; flips drive the M5 close-trend alert.</td></tr>
+      </table>
+
+      <h3 id="terms">Core terms</h3>
+      <ul>
+        <li><b>Pivot</b> — a 4-bar local high or low.</li>
+        <li><b>Thrust</b> — a move that breaks a 4-bar extreme, flipping flow and setting a swing.</li>
+        <li><b>Swing high / low</b> — the extreme held when flow last flipped.</li>
+        <li><b>BOS (break of structure)</b> — price breaks a confirmed swing in the trend direction: continuation.</li>
+        <li><b>CHOCH (change of character)</b> — price breaks a swing against the trend: potential reversal.</li>
+        <li><b>Wick FVG / fair value</b> — a 3-candle imbalance; the fair-value zone price tends to revisit.</li>
+        <li><b>Dealing range</b> — the current swing high→low span; <b>dealing-range %</b> is where price sits within it.</li>
+        <li><b>Daily stalk zones</b> — the upper/lower zones off the prior daily range where setups are stalked (<code>D.STK</code>).</li>
+        <li><b>D.MTX / S.MTX</b> — the daily and swing "matrix" level read-outs (% position with fair/unfair and deep-retracement flags).</li>
+        <li><b>Daily levels</b> — projections off the prior day: 150 / 125 / 100 / 67 / 50 / 33 / 0 / −25 / −50.</li>
+        <li><b>Mx</b> — the monthly boundary: the 1st of the month, and the monthly options expiry (3rd Friday, rolling back to Thursday on a holiday). Quad-witching in Mar/Jun/Sep/Dec.</li>
+        <li><b>Sessions</b> — the 19:45 evening open, the overnight range, and RTH 09:30–16:00.</li>
+      </ul>
+
+      <h2 id="webapp">Web App Features</h2>
+      <ul>
+        <li><b>Instance strip</b> — one card per live EA, grouped by client (account). Collapse a client; each symbol shows an online dot, trend, dealing-range %, P&amp;L and an ARMED flag.</li>
+        <li><b>Engine cards</b> — M15 / H4 / M5 structure, risk for the next order, account, exposure.</li>
+        <li><b>Session game plan</b> — bias, max trades, max session loss, min dealing range, window, allowed thesis buckets, require-H4-agreement. Set before, enforced during.</li>
+        <li><b>Entry patterns</b> — the buckets and tiles; a tile is clickable only when the EA reports it available.</li>
+        <li><b>Trade controls</b> — risk / SL / R:R / split presets, hidden orders, arm, and a gated <b>Execute</b> (off unless <code>InpAllowRemoteExec</code>). Set-SL / Set-TP take a price; the matrices stay chart-only.</li>
+        <li><b>Open positions (Trade tab)</b> — every ticket on the account, merged across instances, with a per-row Close addressed to the owning chart.</li>
+        <li><b>Journal</b> — the table above.</li>
+        <li><b>EA source / updater card</b> — download the EA, template, and updater; generate a client config with a per-client EA name.</li>
+      </ul>
+
+      <h2 id="phone">Phone App (PWA)</h2>
+      <p>Open <code>7r4d3.net</code> in Chrome and <b>Install app</b> (or the Install button in the header). It lands on
+        your home screen, opens full-screen, and can push alerts even when closed.</p>
+      <ul>
+        <li><b>🔔 Alerts</b> — tap once, grant permission; a test push confirms it. Alerts fan out to every subscribed device.</li>
+        <li><b>Control</b> — all trade controls, per-ticket close and the journal work on the phone; wide tables scroll inside their own container so the page never scrolls sideways.</li>
+        <li>Tapping a notification jumps the dashboard to the instance it was about.</li>
+      </ul>
+      <p>Web Push is implemented from <code>node:crypto</code> alone (RFC 8291 payload encryption + RFC 8292 VAPID),
+        so the bridge stays zero-dependency.</p>
+      <div class="callout todo"><strong>Not wired yet:</strong> the EA still sends alerts only to Discord. The
+        <code>POST /api/alert</code> hook that reaches the phone is live and tested; the EA needs a one-line call added
+        next to <code>SendDiscordAlert</code> to use it.</div>
+
+      <h2 id="updater">The Updater</h2>
+      <ul>
+        <li>Pulls the current EA from the bridge, installs into the terminal's <code>Experts</code>, compiles it, backs up and rolls back on a bad build.</li>
+        <li><b>Windowed</b> (<code>Update-EA-GUI.bat</code>) and console (<code>Update-EA.bat</code>) — same worker.</li>
+        <li><b>Per-client EA name</b> — the filename MT5 (and the broker's journal) sees. Set it in the window or the config.</li>
+        <li><b>Diagnose</b> — one button, a full support report: config, token length, DNS, TCP, proxy, unauthenticated then authenticated calls. The first failing line is the fault.</li>
+        <li><b>Self-maintaining</b> — updates itself and syncs the GUI/companion files each run.</li>
+      </ul>
+
+      <h2 id="infra">Infrastructure</h2>
+      <ul>
+        <li><b>Host</b> — Railway runs the Node server with a mounted <code>/data</code> volume (journal, plan, VAPID key, push subscriptions all persist).</li>
+        <li><b>Domain</b> — <code>7r4d3.net</code>, a Cloudflare-proxied CNAME to Railway. It exists because a client's network dropped TCP to Railway's IP; Cloudflare's IPs are reachable. The Railway URL still works as a fallback.</li>
+        <li><b>Auth</b> — every <code>/api/*</code> route needs the <code>RM_TOKEN</code>, except <code>/api/health</code> and <code>/api/push/key</code> (neither is a secret).</li>
+        <li><b>Versioning</b> — <code>RM_VERSION</code> drives both the EA and the properties dialog; the server's <code>CONTRACT_VERSION</code> is bumped with it so a stale EA can't masquerade as current.</li>
+      </ul>
+
+      <h2 id="footprint">Execution Footprint</h2>
+      <p>Measures to keep automated trading from reading as automated. Full audit in <code>EXECUTION-FOOTPRINT.md</code>.</p>
+      <ul>
+        <li><b>Magic number 0</b> — indistinguishable from a manual order; no cross-account handle.</li>
+        <li><b>Risk jitter</b> — the risk figure jitters down by up to <code>InpRiskJitterPct</code> per setup, so the same setup no longer produces a byte-identical lot size.</li>
+        <li><b>Stagger</b> — split legs are queued and sent 200–2000&nbsp;ms apart (off <code>OnTimer</code>, never blocking the protective paths), so a split doesn't arrive as N tickets in the same millisecond.</li>
+        <li><b>Per-client EA name</b> — removes the filename as a handle linking accounts.</li>
+        <li><b>Local-only logging</b> — the Experts-log banner is opt-in (<code>InpDebugLog</code>); the on-chart badge verifies the build without writing anything.</li>
+      </ul>
+
+      <h2 id="todo">To Define / In Progress</h2>
+      <p>The living list — ambiguities to resolve and work queued. This is the place to catch mis-defined things.</p>
+      <div class="callout todo"><strong>Prior-Day modifiers</strong> — the meaning of <span class="mono">!</span>,
+        <span class="mono">?</span>, <span class="mono">b</span>, <span class="mono">c</span>, <span class="mono">g</span>
+        and compounds like <span class="mono">Y.G?</span> is still open. (You said "later".)</div>
+      <div class="callout todo"><strong>Result (R) column</strong> — confirm it is today's realised day type, not something else.</div>
+      <div class="callout todo"><strong>Flow definition</strong> — confirm the thrust-based flow above matches your daily G definition.</div>
+      <div class="callout todo"><strong>T4 colour codes</strong> — <span class="mono">pY / pG / pB</span> and the
+        <span class="mono">c</span> / <span class="mono">!</span> variants seen in the sheet need mapping.</div>
+      <div class="callout todo"><strong>EA → push alert</strong> — add the <code>POST /api/alert</code> call so phone alerts fire, not just Discord.</div>
+      <div class="callout todo"><strong>Auto-capture</strong> — wire Prior Day, Stalk Hit, Session Gap, HTF Break and Result to fill from the EA (the mechanism exists; only Trend and DR% are wired so far).</div>
+      <div class="callout todo"><strong>Flow Call ML</strong> — a model to predict the daily flow break, replacing the manual call.</div>
+
+    </main>
+  </div>
+
+  <script>
+    // Build the sidebar from the headings so the TOC never drifts from the content.
+    const toc = document.getElementById('toc');
+    document.querySelectorAll('#prose h2, #prose h3').forEach((h) => {
+      const a = document.createElement('a');
+      a.href = '#' + h.id;
+      a.textContent = h.textContent;
+      if (h.tagName === 'H3') a.className = 'h3';
+      toc.appendChild(a);
+    });
+  </script>
+</body>
+</html>

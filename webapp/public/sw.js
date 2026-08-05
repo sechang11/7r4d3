@@ -9,7 +9,7 @@ const SHELL = 'rm-shell-v1';
 const SHELL_FILES = [
   '/', '/index.html', '/style.css',
   '/app.js', '/plan.js', '/journal.js',
-  '/icon-192.png', '/manifest.webmanifest',
+  '/docs.html', '/icon-192.png', '/manifest.webmanifest',
 ];
 
 self.addEventListener('install', (e) => {
