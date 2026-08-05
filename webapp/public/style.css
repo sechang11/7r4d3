@@ -338,3 +338,51 @@ button.ghost:hover { color: #fff; }
 .jcell:hover { border-color: var(--border); }
 .jcell:focus { outline: none; border-color: var(--on); background: var(--bg); }
 select.jcell { width: 74px; }
+
+/* ── PWA / mobile ────────────────────────────────────────── */
+/* Respect the notch on installed iOS/Android. */
+body { padding-left: max(16px, env(safe-area-inset-left)); padding-right: max(16px, env(safe-area-inset-right)); }
+
+#pushBtn.sel { color: #fff; border-color: var(--buy); background: var(--buy); }
+
+@media (max-width: 640px) {
+  body { padding: 10px; font-size: 15px; }           /* bigger base text on phones */
+  header { gap: 8px; padding: 10px 12px; }
+  header h1 { font-size: 15px; }
+  .price { font-size: 20px; }
+  .sym { font-size: 13px; }
+
+  /* one column of engine cards, full width */
+  .grid, .planGrid, .srcRow, .srcRow { grid-template-columns: 1fr; }
+  .card.wide, .card { grid-column: 1 / -1; }
+
+  /* fatter tap targets */
+  button, .pbtn, .tile, .chip, .inst { min-height: 40px; }
+  .pbtn { padding: 9px 14px; }
+  .tiles { gap: 9px; }
+  .tile { min-width: calc(50% - 5px); flex: 1 1 calc(50% - 5px); }
+
+  /* instance strip becomes a scannable stack */
+  .instStrip { flex-direction: column; }
+  .inst { min-width: 0; width: 100%; }
+
+  /* controls: label above the buttons instead of beside */
+  .ctrlRow { flex-direction: column; align-items: stretch; gap: 6px; }
+  .ctrlLbl { width: auto; flex: none; }
+  .ctrlRow input[type=number] { width: 100%; }
+
+  /* the journal stays a horizontal-scroll table, but give it more height and
+     keep the sticky Week/Date corner usable with a thumb */
+  .jrnlScroll { max-height: 78vh; }
+  .jtbl .stick2 { left: 40px; }
+  .jtbl .stick  { width: 40px; }
+
+  /* header buttons wrap under the title rather than overflow */
+  #pushBtn, #installBtn { font-size: 13px; padding: 6px 10px; }
+}
+
+/* Standalone (installed) — hide the "Install" hint entirely and tighten the top. */
+@media (display-mode: standalone) {
+  #installBtn { display: none !important; }
+  header { padding-top: max(10px, env(safe-area-inset-top)); }
+}

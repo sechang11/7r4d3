@@ -2,9 +2,16 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>RiskManager — Live</title>
   <link rel="stylesheet" href="/style.css">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="theme-color" content="#0e0e16">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="RiskMgr">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 </head>
 <body>
 
@@ -12,6 +19,8 @@
     <h1>RISKMANAGER</h1>
     <span id="conn" class="pill down"><span class="dot"></span><span id="connTxt">waiting for EA…</span></span>
     <div class="spacer"></div>
+    <button id="pushBtn" class="ghost" hidden title="Get push notifications on this device">🔔 Alerts</button>
+    <button id="installBtn" class="ghost" hidden title="Install to your home screen">Install</button>
     <span class="sym" id="sym">—</span>
     <span class="price" id="price">—</span>
   </header>
@@ -320,5 +329,6 @@
   <script src="/plan.js"></script>
   <script src="/app.js"></script>
   <script src="/journal.js"></script>
+  <script src="/pwa.js"></script>
 </body>
 </html>

@@ -66,6 +66,14 @@ async function api(path, opts = {}) {
 
 window.RMApi = api;   // journal.js reuses the same auth + error handling
 
+// Let the service worker jump the dashboard to the instance an alert was about.
+window.RMSelectInstance = (key) => {
+  if (!key) return;
+  selectedKey = key;
+  localStorage.setItem(INST_KEY, key);
+  poll();
+};
+
 $('authSave').onclick = async () => {
   token = $('authInput').value.trim();
   localStorage.setItem(TOKEN_KEY, token);

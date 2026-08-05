@@ -16,6 +16,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import { loadVapid, sendPush } from './push.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -51,12 +52,32 @@ const RM_TOKEN = (process.env.RM_TOKEN ?? '').trim();
 const DATA_DIR  = process.env.RM_DATA_DIR ?? path.join(__dirname, 'data');
 const PLAN_FILE = path.join(DATA_DIR, 'plan.json');
 const JOURNAL   = path.join(DATA_DIR, 'journal.jsonl');
+const VAPID_FILE= path.join(DATA_DIR, 'vapid.json');
+const SUBS_FILE = path.join(DATA_DIR, 'push-subs.json');
 // Daily journal: one file per account, keyed by date. Separate from the
 // append-only command journal above - this one is edited.
 const JRNL_DIR    = path.join(DATA_DIR, 'journal');
 const SCHEMA_FILE = path.join(DATA_DIR, 'journal-schema.json');
 fs.mkdirSync(JRNL_DIR, { recursive: true });
 fs.mkdirSync(DATA_DIR, { recursive: true });
+
+// Web push: one VAPID keypair for this deployment, and the browser push
+// subscriptions we fan alerts out to. Both persist on the mounted volume.
+const VAPID = loadVapid(VAPID_FILE);
+const loadSubs = () => { try { return JSON.parse(fs.readFileSync(SUBS_FILE, 'utf8')); } catch { return []; } };
+const saveSubs = (a) => fs.writeFileSync(SUBS_FILE, JSON.stringify(a, null, 2));
+let pushSubs = loadSubs();
+
+// Fan one alert out to every subscription. A push service returns 404/410 for a
+// subscription the user has revoked; drop those so the list self-cleans.
+async function fanoutPush(payload) {
+  if (pushSubs.length === 0) return { sent: 0, pruned: 0 };
+  const results = await Promise.all(pushSubs.map((sub) => sendPush(sub, payload, VAPID)));
+  const keep = [], before = pushSubs.length;
+  results.forEach((r, i) => { if (r.status !== 404 && r.status !== 410) keep.push(pushSubs[i]); });
+  if (keep.length !== before) { pushSubs = keep; saveSubs(pushSubs); }
+  return { sent: results.filter((r) => r.status >= 200 && r.status < 300).length, pruned: before - keep.length };
+}
 
 // ── fail-safe: never expose an unauthenticated API beyond loopback ──
 const isLoopback = HOST === '127.0.0.1' || HOST === 'localhost' || HOST === '::1';
@@ -341,6 +362,8 @@ const MIME = {
   '.css':  'text/css; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
   '.svg':  'image/svg+xml',
+  '.png':  'image/png',
+  '.webmanifest': 'application/manifest+json',
 };
 
 const serveStatic = (res, urlPath) => {
@@ -390,7 +413,10 @@ const server = http.createServer(async (req, res) => {
     }
 
     // ---- everything else under /api requires the shared secret ----
-    if (p.startsWith('/api/') && !authorised(req)) {
+    // The VAPID public key is not a secret and the browser needs it to
+    // subscribe before it has done anything else, so it is open like /health.
+    const OPEN = p === '/api/push/key';
+    if (p.startsWith('/api/') && !OPEN && !authorised(req)) {
       return send(res, 401, { error: 'unauthorised' });
     }
 
@@ -499,6 +525,46 @@ const server = http.createServer(async (req, res) => {
     // ---- daily journal --------------------------------------------
     // Schema-driven on purpose: the columns are defined in journal-schema.json,
     // so adding a field the EA fills is a data change, not a code change.
+    // ---- web push --------------------------------------------------
+    // The public key is not a secret — the browser needs it to subscribe — so
+    // this one route is intentionally open, no token required.
+    if (p === '/api/push/key' && req.method === 'GET') {
+      return send(res, 200, { publicKey: VAPID.publicKey });
+    }
+    if (p === '/api/push/subscribe' && req.method === 'POST') {
+      const sub = JSON.parse(await readBody(req));
+      if (!sub?.endpoint || !sub?.keys?.p256dh || !sub?.keys?.auth) {
+        return send(res, 400, { error: 'not a push subscription' });
+      }
+      if (!pushSubs.some((s) => s.endpoint === sub.endpoint)) { pushSubs.push(sub); saveSubs(pushSubs); }
+      return send(res, 200, { ok: true, count: pushSubs.length });
+    }
+    if (p === '/api/push/unsubscribe' && req.method === 'POST') {
+      const { endpoint } = JSON.parse(await readBody(req));
+      pushSubs = pushSubs.filter((s) => s.endpoint !== endpoint);
+      saveSubs(pushSubs);
+      return send(res, 200, { ok: true, count: pushSubs.length });
+    }
+    if (p === '/api/push/test' && req.method === 'POST') {
+      const r = await fanoutPush({ title: 'RiskManager', body: 'Test alert — push is working.', tag: 'test' });
+      return send(res, 200, { ok: true, subscriptions: pushSubs.length, ...r });
+    }
+
+    // ---- alert relay: EA (or the Discord path) posts here, we push --------
+    // Same idea as the Discord webhook, but it reaches the phone via the PWA.
+    if (p === '/api/alert' && req.method === 'POST') {
+      const a = JSON.parse(await readBody(req));
+      const r = await fanoutPush({
+        title: a.title || 'RiskManager',
+        body:  a.body  || '',
+        tag:   a.tag   || 'alert',
+        key:   a.key   || null,
+        url:   '/',
+      });
+      appendJournal({ type: 'alert', title: a.title, body: a.body, key: a.key, ...r });
+      return send(res, 200, { ok: true, ...r });
+    }
+
     if (p === '/api/journal/schema' && req.method === 'GET') {
       return send(res, 200, { schema: readSchema() });
     }
