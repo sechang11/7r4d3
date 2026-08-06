@@ -1,100 +1,256 @@
 {
   "version": 2,
-  "note": "Column definitions for the daily journal. This file is the single source of truth: the table, the storage, the auto-capture and the docs page all read from it. Renaming a label or adding a field is a data change here, not a code change. `def` is the working definition, `when` is the Eastern-time moment it is recorded, `source` is 'auto' (MT5 can compute it) or 'manual' (your judgement). Codes and modifiers are still being finalised — see the 'To define' list on the docs page.",
-
-  "symbols": ["ES", "NQ", "DXY", "EUR", "GBP", "CAD", "XAU", "XAG", "BTC", "ETH"],
-  "weekendSymbols": ["BTC", "ETH"],
-
+  "note": "Column definitions for the daily journal. This file is the single source of truth: the table, the storage, the auto-capture and the docs page all read from it. Renaming a label or adding a field is a data change here, not a code change. `def` is the working definition, `when` is the Eastern-time moment it is recorded, `source` is 'auto' (MT5 can compute it) or 'manual' (your judgement). Codes and modifiers are still being finalised \u2014 see the 'To define' list on the docs page.",
+  "symbols": [
+    "ES",
+    "NQ",
+    "DXY",
+    "EUR",
+    "GBP",
+    "CAD",
+    "XAU",
+    "XAG",
+    "BTC",
+    "ETH"
+  ],
+  "weekendSymbols": [
+    "BTC",
+    "ETH"
+  ],
   "aliases": {
-    "ES": ["US500", "SPX500", "US500.sim", "SPX500.sim"],
-    "NQ": ["NAS100", "USTEC", "NAS100.sim", "US100", "US100.sim"],
-    "DXY": ["USDX", "DX"],
-    "EUR": ["EURUSD"],
-    "GBP": ["GBPUSD"],
-    "CAD": ["USDCAD"],
-    "XAU": ["XAUUSD", "GOLD"],
-    "XAG": ["XAGUSD", "SILVER"],
-    "BTC": ["BTCUSD"],
-    "ETH": ["ETHUSD"]
+    "ES": [
+      "US500",
+      "SPX500",
+      "US500.sim",
+      "SPX500.sim"
+    ],
+    "NQ": [
+      "NAS100",
+      "USTEC",
+      "NAS100.sim",
+      "US100",
+      "US100.sim"
+    ],
+    "DXY": [
+      "USDX",
+      "DX"
+    ],
+    "EUR": [
+      "EURUSD"
+    ],
+    "GBP": [
+      "GBPUSD"
+    ],
+    "CAD": [
+      "USDCAD"
+    ],
+    "XAU": [
+      "XAUUSD",
+      "GOLD"
+    ],
+    "XAG": [
+      "XAGUSD",
+      "SILVER"
+    ],
+    "BTC": [
+      "BTCUSD"
+    ],
+    "ETH": [
+      "ETHUSD"
+    ]
   },
-
   "groups": [
     {
       "key": "habits",
       "label": "Habits",
       "fields": [
-        { "key": "sleep",      "label": "Sleep",      "type": "score", "def": "Self-rated 0-10." },
-        { "key": "fuel",       "label": "Fuel",       "type": "score", "def": "Nutrition / hydration, 0-10." },
-        { "key": "exercise",   "label": "Exercise",   "type": "score", "def": "0-10." },
-        { "key": "discipline", "label": "Discipline", "type": "score", "def": "Did you follow the plan, 0-10." }
+        {
+          "key": "sleep",
+          "label": "Sleep",
+          "type": "score",
+          "def": "Self-rated 0-10."
+        },
+        {
+          "key": "fuel",
+          "label": "Fuel",
+          "type": "score",
+          "def": "Nutrition / hydration, 0-10."
+        },
+        {
+          "key": "exercise",
+          "label": "Exercise",
+          "type": "score",
+          "def": "0-10."
+        },
+        {
+          "key": "discipline",
+          "label": "Discipline",
+          "type": "score",
+          "def": "Did you follow the plan, 0-10."
+        }
       ]
     },
     {
       "key": "trade",
       "label": "Trade",
       "fields": [
-        { "key": "forced",        "label": "Forced?",        "type": "tf", "def": "Did you take a trade you should not have." },
-        { "key": "reacted",       "label": "Reacted?",       "type": "tf", "def": "Did you act emotionally rather than from the plan." },
-        { "key": "overleveraged", "label": "Overleveraged?", "type": "tf", "def": "Did size exceed the plan." },
-        { "key": "homerun",       "label": "Homerun?",       "type": "tf", "def": "Did a runner reach an outsized target." },
-        { "key": "stance",        "label": "Stance",         "type": "enum",
-          "options": ["Offense", "Neutral", "Defense", "Defended"],
-          "def": "The strategy set going into the day: what you are trying to accomplish — swing for a home run, preserve capital, go for base hits, manage aggressively. Set once, before the session.",
-          "source": "manual", "when": "pre-session" },
-        { "key": "result",        "label": "Result",         "type": "number", "def": "Net result for the day." }
+        {
+          "key": "forced",
+          "label": "Forced?",
+          "type": "tf",
+          "def": "Did you take a trade you should not have."
+        },
+        {
+          "key": "reacted",
+          "label": "Reacted?",
+          "type": "tf",
+          "def": "Did you act emotionally rather than from the plan."
+        },
+        {
+          "key": "overleveraged",
+          "label": "Overleveraged?",
+          "type": "tf",
+          "def": "Did size exceed the plan."
+        },
+        {
+          "key": "homerun",
+          "label": "Homerun?",
+          "type": "tf",
+          "def": "Did a runner reach an outsized target."
+        },
+        {
+          "key": "stance",
+          "label": "Stance",
+          "type": "enum",
+          "options": [
+            "Offense",
+            "Neutral",
+            "Defense",
+            "Defended"
+          ],
+          "def": "The strategy set going into the day: what you are trying to accomplish \u2014 swing for a home run, preserve capital, go for base hits, manage aggressively. Set once, before the session.",
+          "source": "manual",
+          "when": "pre-session"
+        },
+        {
+          "key": "result",
+          "label": "Result",
+          "type": "number",
+          "def": "Net result for the day."
+        }
       ]
     }
   ],
-
   "perSymbol": [
     {
-      "key": "priorDay", "label": "Prior Day", "type": "text", "width": 78,
-      "was": "T0:Type", "source": "auto", "when": "daily close",
+      "key": "priorDay",
+      "label": "Prior Day",
+      "type": "text",
+      "width": 78,
+      "was": "T0:Type",
+      "source": "auto",
+      "when": "daily close",
       "def": "The type of YESTERDAY's closed daily candle, fixed the moment it closes. Compared against the candle before it. G = a flow change: the low of a prior up-close candle is breached, or the high of a prior down-close candle is breached. Y = moved against the flow but did NOT change it. B = with the flow (continuation). R = a flow change AND a closed-trend change (both flow and trend flipped). Modifiers (! ? b c g and compounds like Y.G?) are still to be defined.",
-      "values": { "G": "flow change", "Y": "against flow, no change", "B": "with flow", "R": "flow + trend change" }
+      "values": {
+        "G": "flow change",
+        "Y": "against flow, no change",
+        "B": "with flow",
+        "R": "flow + trend change"
+      }
     },
     {
-      "key": "htfBreak", "label": "HTF Break", "type": "text", "width": 52,
-      "was": "x:", "source": "auto", "when": "any time (alert)",
+      "key": "htfBreak",
+      "label": "HTF Break",
+      "type": "text",
+      "width": 52,
+      "was": "x:",
+      "source": "auto",
+      "when": "any time (alert)",
       "def": "Higher-timeframe level breach, recorded at most once per week. xW = weekly high or low breached. xMx = monthly-expiry (Mx) high or low breached. Fires an alert when it happens."
     },
     {
-      "key": "flowCall", "label": "Flow Call", "type": "text", "width": 56,
-      "was": "p:", "source": "manual", "when": "new daily open",
-      "def": "Your prediction, made when the new daily candle opens, of which way flow will break — NOT the closing direction. u = breaks the high (up), d = breaks the low (down), i = breaks neither (inside), o = breaks both (outside). Multiple letters mean 'unsure, could be either'. Candidate for a machine-learning prediction later; manual for now."
+      "key": "flowCall",
+      "label": "Flow Call",
+      "type": "text",
+      "width": 56,
+      "was": "p:",
+      "source": "manual",
+      "when": "new daily open",
+      "def": "Your prediction, made when the new daily candle opens, of which way flow will break \u2014 NOT the closing direction. u = breaks the high (up), d = breaks the low (down), i = breaks neither (inside), o = breaks both (outside). Multiple letters mean 'unsure, could be either'. Candidate for a machine-learning prediction later; manual for now."
     },
     {
-      "key": "stalkHit", "label": "Stalk Hit", "type": "tf", "width": 44,
-      "was": "T1", "source": "auto", "when": "00:00 ET (midnight open)",
+      "key": "stalkHit",
+      "label": "Stalk Hit",
+      "type": "tf",
+      "width": 44,
+      "was": "T1",
+      "source": "auto",
+      "when": "00:00 ET (midnight open)",
       "def": "After the new daily candle opens at Eastern midnight: did price trade into the daily stalk zone? t = yes, f = no. Should fire an alert."
     },
     {
-      "key": "sessionGap", "label": "Session Gap", "type": "tf", "width": 56,
-      "was": "T2", "source": "auto", "when": "07:00 ET",
+      "key": "sessionGap",
+      "label": "Session Gap",
+      "type": "tf",
+      "width": 56,
+      "was": "T2",
+      "source": "auto",
+      "when": "07:00 ET",
       "def": "Checked in the morning: is there a gap between the current price and the opening price of the session that began at 19:45 the evening before? t / f. The EA already computes session gap (S.GAP)."
     },
     {
-      "key": "rangePlay", "label": "Range Play", "type": "text", "width": 56,
-      "was": "T3", "source": "manual", "when": "09:00 ET (before the 09:30 open)",
+      "key": "rangePlay",
+      "label": "Range Play",
+      "type": "text",
+      "width": 56,
+      "was": "T3",
+      "source": "manual",
+      "when": "09:00 ET (before the 09:30 open)",
       "def": "Your prediction of how the day session (09:30-16:00) will interact with the overnight session's range. i = internal, e = external. ie = trades into the overnight internal range first, then breaks external. ei = external then internal. ii = stays inside the overnight range, never exits. ee = external. eea = from one external side to the other. eeb = launches external and keeps going, never looking back."
     },
     {
-      "key": "middayCall", "label": "Midday Call", "type": "text", "width": 56,
-      "was": "T4", "source": "manual", "when": "12:00 ET",
-      "def": "Around noon, given the action so far: your prediction of today's day-type outcome — will today close as a G, Y, B or R? (Same classification as Prior Day, predicted forward.)"
+      "key": "middayCall",
+      "label": "Midday Call",
+      "type": "text",
+      "width": 56,
+      "was": "T4",
+      "source": "manual",
+      "when": "12:00 ET",
+      "def": "Around noon, given the action so far: your prediction of today's day-type outcome \u2014 will today close as a G, Y, B or R? (Same classification as Prior Day, predicted forward.)"
     },
     {
-      "key": "result", "label": "Result", "type": "text", "width": 44,
-      "was": "R", "source": "auto", "when": "end of day",
-      "def": "The actual realised day type once today's candle closes (G / Y / B / R) — the outcome to compare against the Midday Call. NEEDS CONFIRMATION: is the R column the realised day type, or something else?"
+      "key": "result",
+      "label": "Result",
+      "type": "text",
+      "width": 44,
+      "was": "R",
+      "source": "auto",
+      "when": "end of day",
+      "def": "The actual realised day type once today's candle closes (G / Y / B / R) \u2014 the outcome to compare against the Midday Call. NEEDS CONFIRMATION: is the R column the realised day type, or something else?"
     }
   ],
-
   "auto": {
-    "note": "Fields MT5 can fill without you typing. `from` is a dot-path into the state snapshot the EA posts; `when` decides the moment of capture; symbols are matched to columns via the aliases map above. These two are wired as a demonstration — the rest of the 'auto' fields above become live as the EA starts reporting them.",
+    "note": "Fields MT5 can fill without you typing. `from` is a dot-path into the state snapshot; `capHour` is the earliest Eastern-time hour to capture (first-write-wins after that); symbols map to columns via the aliases map. Trend and DR% are wired as a demonstration. The real auto fields (Prior Day, Session Gap, Stalk Hit, HTF Break, Result) become live once the EA emits each \u2014 Prior Day and Result also await confirmation of the flow definition.",
     "perSymbol": [
-      { "key": "autoTrend",  "label": "Trend",  "from": "m15.trend",     "when": "sessionOpen", "map": { "1": "up", "2": "dn" } },
-      { "key": "autoDrange", "label": "DR%",    "from": "m15.drangePct", "when": "sessionOpen", "round": 0 }
+      {
+        "key": "autoTrend",
+        "label": "Trend",
+        "from": "m15.trend",
+        "when": "sessionOpen",
+        "map": {
+          "1": "up",
+          "2": "dn"
+        },
+        "capHour": 0
+      },
+      {
+        "key": "autoDrange",
+        "label": "DR%",
+        "from": "m15.drangePct",
+        "when": "sessionOpen",
+        "round": 0,
+        "capHour": 0
+      }
     ]
   }
 }

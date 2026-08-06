@@ -266,34 +266,61 @@ const readJournal = (login, days) => {
 const dotGet = (obj, dotted) =>
   String(dotted).split('.').reduce((o, k) => (o == null ? undefined : o[k]), obj);
 
+// The trading day is Eastern-time, so capture is keyed to ET, not UTC or the
+// server's zone. Node's ICU gives us both without a tz library.
+const etParts = () => {
+  const p = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/New_York', hour12: false,
+    year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit',
+  }).formatToParts(new Date());
+  const g = (t) => p.find((x) => x.type === t)?.value;
+  return { day: `${g('year')}-${g('month')}-${g('day')}`, hour: Number(g('hour')) % 24 };
+};
+
 /**
- * Fill the schema's `auto` fields for today from whatever the EAs are currently
- * reporting. Called when a client loads the journal, so the row fills itself as
- * the session runs rather than needing a separate scheduler.
+ * Fill the schema's `auto` fields for today from what the EAs are reporting.
+ * Called when a client loads the journal, so a row fills itself as the session
+ * runs rather than needing a scheduler.
+ *
+ * Two rules make it behave like a real observation rather than a live mirror:
+ *   - time-gated: a field is only captured at/after its ET `capHour`, so a
+ *     07:00 reading isn't taken at 03:00.
+ *   - first-write-wins: once set for the day it is not overwritten, so the
+ *     value recorded AT its moment sticks even if you reopen the journal later.
+ * Manual edits always win — a field you typed is never overwritten by auto.
  */
 const captureAuto = () => {
   const schema = readSchema();
   const defs = schema?.auto?.perSymbol ?? [];
   if (defs.length === 0) return;
 
-  const today = isoDay(new Date());
+  const { day: today, hour: etHour } = etParts();
   const byLogin = new Map();
+  const prior = new Map();   // login -> existing row for today (to not clobber)
+
   for (const [, e] of instances) {
     const login = e.state?.account?.login;
     const sym   = e.state?.symbol;
     if (login == null || !sym) continue;
+    if (!prior.has(login)) prior.set(login, loadJournalFile(login)[today] ?? {});
     if (!byLogin.has(login)) byLogin.set(login, {});
+
+    const col = (schema.symbols ?? []).find((c) =>
+      sym === c || (schema.aliases?.[c] ?? []).includes(sym) ||
+      sym.toUpperCase().startsWith(c.toUpperCase()));
+    if (!col) continue;
+
     for (const def of defs) {
+      // Not yet its time of day.
+      if (def.capHour != null && etHour < def.capHour) continue;
+      // Already recorded today (auto or manual) — leave it.
+      if (prior.get(login)?.[col]?.[def.key] != null) continue;
+
       let v = dotGet(e.state, def.from);
       if (v == null) continue;
       if (def.map)  v = def.map[String(v)] ?? v;
       if (def.round != null && typeof v === 'number') v = Number(v.toFixed(def.round));
-      // Match a reported symbol to a schema column: US500.sim -> ES needs the
-      // alias table below; a plain prefix match covers XAUUSD -> XAU etc.
-      const col = (schema.symbols ?? []).find((c) =>
-        sym === c || sym.toUpperCase().startsWith(c.toUpperCase()) ||
-        (schema.aliases?.[c] ?? []).includes(sym));
-      if (!col) continue;
+
       byLogin.get(login)[col] = { ...(byLogin.get(login)[col] ?? {}), [def.key]: v };
     }
   }
