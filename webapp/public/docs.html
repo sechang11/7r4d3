@@ -111,13 +111,14 @@
         <span class="kv"><b>G</b> period-trend change — the trend flipped vs the prior period</span>
         <span class="kv"><b>Y</b> moved against the period trend, but did NOT flip it</span>
         <span class="kv"><b>B</b> with the period trend (continuation)</span>
-        <span class="kv"><b>R</b> period-trend change AND a closed algo-trend change</span>
       </div>
       <div class="callout"><strong>Period Trend</strong> is the journal's own trend concept, set by the
         <em>previous closed candle</em>: break its <b>high</b> → period <b>up</b> trend; break its <b>low</b> → period
-        <b>down</b> trend. It is deliberately simpler than the algo's flow (below) — this is the definition the journal
-        uses for Prior Day, Midday Call and Result. <b>R</b> additionally brings in the algo's trend
-        (<code>tTrend</code>, set by break-of-structure) flipping at the same time.</div>
+        <b>down</b> trend. It is deliberately simpler than the algo's flow (below), and is the definition the journal
+        uses for Prior Day, Midday Call and Result.</div>
+      <div class="callout todo"><strong>R — parked.</strong> Every R (period-trend change + algo-trend change) is also a
+        G (period-trend change), so R is not yet a distinct category. Skipped for now; you'll zero in on what R should
+        capture later. The active classification is <b>G / Y / B</b>.</div>
       <div class="callout todo"><strong>Modifiers — to define later.</strong> The base letter often carries a suffix or
         prefix seen in the sheet: <span class="mono">!</span>, <span class="mono">?</span>, <span class="mono">b</span>,
         <span class="mono">c</span>, <span class="mono">g</span>, and compounds like <span class="mono">Y.G?</span>,
@@ -176,8 +177,8 @@
         becomes a <b>swing high</b>; the mirror flips it back up. A <b>flow change</b> is this flip. It drives the
         engine's setups — <em>not</em> the journal's Period Trend.</p>
       <p><b>Trend</b> (<code>tTrend</code>) is bigger, set by a <b>break of structure</b> (BOS) — price breaking a
-        confirmed swing. It is the "closed algo-trend" whose flip, together with a Period-Trend change, makes a Prior
-        Day an <b>R</b>.</p>
+        confirmed swing. It was the algo half of the parked <b>R</b> definition; unused by the journal until R is
+        pinned down.</p>
 
       <h3 id="engines">The three engines</h3>
       <table>
@@ -265,7 +266,9 @@
       <div class="callout todo"><strong>Prior-Day modifiers</strong> — the meaning of <span class="mono">!</span>,
         <span class="mono">?</span>, <span class="mono">b</span>, <span class="mono">c</span>, <span class="mono">g</span>
         and compounds like <span class="mono">Y.G?</span> is still open. (You said "later".)</div>
-      <div class="callout todo"><strong>Result (R) column</strong> — confirm it is today's realised day type, not something else.</div>
+      <div class="callout todo"><strong>R value</strong> — parked. Every R is also a G, so it is not yet a distinct
+        category. Zero in on what R should uniquely capture, then it rejoins G / Y / B.</div>
+      <div class="callout todo"><strong>Result (R) column</strong> — confirm the rightmost per-symbol column is today's realised day type, not something else. (Distinct from the R <em>value</em> above.)</div>
       <div class="callout"><strong>Period Trend — defined.</strong> Prior Day / Midday Call / Result now use Period
         Trend (break the previous candle's high = up, its low = down), separate from the algo's flow.</div>
       <div class="callout todo"><strong>T4 colour codes</strong> — <span class="mono">pY / pG / pB</span> and the
