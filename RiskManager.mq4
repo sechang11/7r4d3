@@ -4,7 +4,7 @@
 //|                                  Copyright 2026, MetaQuotes Ltd. |
 //|                                             https://www.mql4.com |
 //+------------------------------------------------------------------+
-#define RM_VERSION "6.10"
+#define RM_VERSION "6.11"
 
 #property copyright "Copyright 2026, MetaQuotes Ltd."
 #property link      "https://www.mql4.com"
@@ -9445,6 +9445,46 @@ int CountTradesToday(bool symbolOnly)
    return n;
 }
 
+// ── Journal: Period Trend day classification ────────────────────────
+// Period Trend is set by the previous CLOSED daily candle: break its high =
+// period up trend, break its low = period down trend. A candle is classified
+// against the trend in effect before it (see docs / journal-schema):
+//   B = continued (broke the trend-aligned extreme)
+//   G = flipped   (broke the opposite extreme)
+//   Y = inside    (broke neither - stalled, against without flipping)
+//   ? = outside (broke both) or prior trend unresolved - edge case, to define
+// shift is a PERIOD_D1 bar index: 1 = yesterday (Prior Day), 0 = today (Result).
+int PeriodBreak(int shift)
+{
+   double h  = iHigh(_Symbol, PERIOD_D1, shift);
+   double l  = iLow (_Symbol, PERIOD_D1, shift);
+   double hp = iHigh(_Symbol, PERIOD_D1, shift + 1);
+   double lp = iLow (_Symbol, PERIOD_D1, shift + 1);
+   if(h <= 0 || hp <= 0) return -1;          // history not ready
+   bool hi = h > hp, lo = l < lp;
+   if(hi && lo) return 3;                     // outside
+   if(hi) return 1;                           // up
+   if(lo) return 2;                           // down
+   return 0;                                  // inside
+}
+
+string ClassifyDay(int shift)
+{
+   int cur = PeriodBreak(shift);
+   if(cur < 0) return "";
+   if(cur == 3) return "?";                   // outside - undefined edge
+   if(cur == 0) return "Y";                   // inside - stalled
+
+   int prior = -1;                            // last decisive break before `shift`
+   for(int k = shift + 1; k <= shift + 6; k++)
+   {
+      int b = PeriodBreak(k);
+      if(b == 1 || b == 2) { prior = b; break; }
+   }
+   if(prior < 0) return "?";
+   return (cur == prior) ? "B" : "G";
+}
+
 string BuildStateJson()
 {
    double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
@@ -9558,6 +9598,13 @@ string BuildStateJson()
    j += "\"prevLow\":"  + JNum(prevL,dg) + ",";
    j += "\"prevRange\":"+ JNum(prevRange,dg) + ",";
    j += "\"prevBull\":" + JBool(prevBull);
+   j += "},";
+
+   // Journal auto-fields the server projects into the shared market store.
+   j += "\"journal\":{";
+   j += "\"priorDay\":\"" + ClassifyDay(1) + "\",";   // yesterday's day type
+   j += "\"result\":\""   + ClassifyDay(0) + "\",";   // today's, firming to close
+   j += "\"periodTrend\":" + IntegerToString(PeriodBreak(0));
    j += "},";
 
    // ── risk presets (what the next order will use) ──

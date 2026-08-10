@@ -155,7 +155,9 @@
         "G": "period-trend change",
         "Y": "against trend, no flip",
         "B": "with trend"
-      }
+      },
+      "from": "journal.priorDay",
+      "capHour": 0
     },
     {
       "key": "htfBreak",
@@ -225,7 +227,9 @@
       "was": "R",
       "source": "auto",
       "when": "end of day",
-      "def": "The actual realised day type once today's candle closes (G / Y / B by PERIOD TREND) \u2014 the outcome to compare against the Midday Call. (R parked \u2014 every R is also a G.) NEEDS CONFIRMATION: is the R column the realised day type, or something else?"
+      "def": "The actual realised day type once today's candle closes (G / Y / B by PERIOD TREND) \u2014 the outcome to compare against the Midday Call. (R parked \u2014 every R is also a G.) NEEDS CONFIRMATION: is the R column the realised day type, or something else?",
+      "from": "journal.result",
+      "capHour": 17
     }
   ],
   "auto": {

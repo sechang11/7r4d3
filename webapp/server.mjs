@@ -36,7 +36,7 @@ const HOST = process.env.HOST ?? (ON_PAAS ? '0.0.0.0' : '127.0.0.1');
 
 // Contract version this server was built against. Compared to the EA's
 // RM_VERSION on every snapshot so a stale EA can't masquerade as live.
-const CONTRACT_VERSION = '6.10';
+const CONTRACT_VERSION = '6.11';
 
 // Shared secret guarding every /api/* route. Set RM_TOKEN in the environment
 // (never in source). Both the EA and the browser must present it.
@@ -320,7 +320,12 @@ const etParts = () => {
  */
 const captureAuto = () => {
   const schema = readSchema();
-  const defs = schema?.auto?.perSymbol ?? [];
+  // Two sources of auto fields: the extra context columns in `auto.perSymbol`,
+  // and any real per-symbol field carrying a `from` path (priorDay, result) —
+  // those fill their existing input column rather than adding a new one.
+  const extra = schema?.auto?.perSymbol ?? [];
+  const inline = (schema?.perSymbol ?? []).filter((f) => f.from);
+  const defs = [...inline, ...extra];
   if (defs.length === 0) return;
 
   const { day: today, hour: etHour } = etParts();
