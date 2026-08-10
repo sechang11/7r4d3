@@ -46,6 +46,15 @@ const CONTRACT_VERSION = '6.10';
 // nothing on either side to show why.
 const RM_TOKEN = (process.env.RM_TOKEN ?? '').trim();
 
+// The account whose EAs are trusted to fill the SHARED market journal. There is
+// no single "master EA" — the master is an account running one EA per symbol
+// chart (~10 of them), and those are the authoritative writers. Set
+// RM_MASTER_LOGIN to that account's login and only its instances write shared
+// market data; a client's EA can still post state and drive its own dashboard,
+// but cannot pollute the shared observations. Unset = any EA writes (fine for a
+// single user, where every EA computes the same account-independent value).
+const MASTER_LOGIN = String(process.env.RM_MASTER_LOGIN ?? '').trim();
+
 // Railway and similar platforms have an EPHEMERAL filesystem — anything under
 // the app directory is wiped on redeploy. Point RM_DATA_DIR at a mounted
 // volume there so the plan and the journal survive.
@@ -325,6 +334,8 @@ const captureAuto = () => {
   for (const [, e] of instances) {
     const sym = e.state?.symbol;
     if (!sym) continue;
+    // Only the designated master account fills the shared store, if one is set.
+    if (MASTER_LOGIN && String(e.state?.account?.login) !== MASTER_LOGIN) continue;
 
     const col = (schema.symbols ?? []).find((c) =>
       sym === c || (schema.aliases?.[c] ?? []).includes(sym) ||
@@ -447,6 +458,7 @@ const server = http.createServer(async (req, res) => {
         // mounted volume - losing a month of journal to a deploy is silent.
         dataDir: DATA_DIR,
         dataPersistent: !ON_PAAS || Boolean(process.env.RM_DATA_DIR),
+        masterLogin: MASTER_LOGIN || null,
         contractVersion: CONTRACT_VERSION,
         authRequired: Boolean(RM_TOKEN),
         uptimeSec: Math.round(process.uptime()),

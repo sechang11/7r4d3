@@ -150,12 +150,12 @@
       "was": "T0:Type",
       "source": "auto",
       "when": "daily close",
-      "def": "The type of YESTERDAY's closed daily candle, fixed the moment it closes. Compared against the candle before it. G = a flow change: the low of a prior up-close candle is breached, or the high of a prior down-close candle is breached. Y = moved against the flow but did NOT change it. B = with the flow (continuation). R = a flow change AND a closed-trend change (both flow and trend flipped). Modifiers (! ? b c g and compounds like Y.G?) are still to be defined.",
+      "def": "The type of YESTERDAY's closed daily candle, fixed the moment it closes, classified by PERIOD TREND. Period Trend is set by the previous closed candle: break its HIGH = period UP trend, break its LOW = period DOWN trend. G = a period-trend change (the trend flipped vs the prior period). Y = moved against the period trend but did NOT flip it. B = with the period trend (continuation). R = a period-trend change AND a closed algo-trend change. Modifiers (! ? b c g and compounds like Y.G?) are still to be defined.",
       "values": {
-        "G": "flow change",
-        "Y": "against flow, no change",
-        "B": "with flow",
-        "R": "flow + trend change"
+        "G": "period-trend change",
+        "Y": "against trend, no flip",
+        "B": "with trend",
+        "R": "period-trend + algo-trend change"
       }
     },
     {
@@ -216,7 +216,7 @@
       "was": "T4",
       "source": "manual",
       "when": "12:00 ET",
-      "def": "Around noon, given the action so far: your prediction of today's day-type outcome \u2014 will today close as a G, Y, B or R? (Same classification as Prior Day, predicted forward.)"
+      "def": "Around noon, given the action so far: your prediction of today's day-type outcome by PERIOD TREND (G / Y / B / R) \u2014 will today flip, fade, continue, or flip both period and algo trend? Same classification as Prior Day, predicted forward."
     },
     {
       "key": "result",
@@ -226,7 +226,7 @@
       "was": "R",
       "source": "auto",
       "when": "end of day",
-      "def": "The actual realised day type once today's candle closes (G / Y / B / R) \u2014 the outcome to compare against the Midday Call. NEEDS CONFIRMATION: is the R column the realised day type, or something else?"
+      "def": "The actual realised day type once today's candle closes (G / Y / B / R by PERIOD TREND) \u2014 the outcome to compare against the Midday Call. NEEDS CONFIRMATION: is the R column the realised day type, or something else?"
     }
   ],
   "auto": {

@@ -106,16 +106,18 @@
       </table>
 
       <h3 id="priorday">Prior Day (was T0) — the daily candle type</h3>
-      <p>Fixed the moment yesterday's daily candle closes, comparing it with the candle before it:</p>
+      <p>Fixed the moment yesterday's daily candle closes, classified by <b>Period Trend</b> (defined below):</p>
       <div class="pillrow">
-        <span class="kv"><b>G</b> flow change — low of a prior up-close breached, or high of a prior down-close breached</span>
-        <span class="kv"><b>Y</b> against the flow, but did NOT change it</span>
-        <span class="kv"><b>B</b> with the flow (continuation)</span>
-        <span class="kv"><b>R</b> flow change AND closed-trend change</span>
+        <span class="kv"><b>G</b> period-trend change — the trend flipped vs the prior period</span>
+        <span class="kv"><b>Y</b> moved against the period trend, but did NOT flip it</span>
+        <span class="kv"><b>B</b> with the period trend (continuation)</span>
+        <span class="kv"><b>R</b> period-trend change AND a closed algo-trend change</span>
       </div>
-      <p>This maps cleanly onto the EA's two structural states: <code>tFlow</code> (micro direction) and
-        <code>tTrend</code> (bigger, set by break-of-structure). <b>G</b> is a <code>tFlow</code> flip;
-        <b>R</b> is <code>tFlow</code> and <code>tTrend</code> flipping together.</p>
+      <div class="callout"><strong>Period Trend</strong> is the journal's own trend concept, set by the
+        <em>previous closed candle</em>: break its <b>high</b> → period <b>up</b> trend; break its <b>low</b> → period
+        <b>down</b> trend. It is deliberately simpler than the algo's flow (below) — this is the definition the journal
+        uses for Prior Day, Midday Call and Result. <b>R</b> additionally brings in the algo's trend
+        (<code>tTrend</code>, set by break-of-structure) flipping at the same time.</div>
       <div class="callout todo"><strong>Modifiers — to define later.</strong> The base letter often carries a suffix or
         prefix seen in the sheet: <span class="mono">!</span>, <span class="mono">?</span>, <span class="mono">b</span>,
         <span class="mono">c</span>, <span class="mono">g</span>, and compounds like <span class="mono">Y.G?</span>,
@@ -164,16 +166,18 @@
         anything off and it gets corrected here. Deep detail lives in <code>TRADING_SYSTEM.md</code> and the Pine
         source <code>ThrustStructure.pine</code>.</p>
 
-      <h3 id="flow">Flow &amp; Trend</h3>
-      <p><b>Flow</b> (<code>tFlow</code>) is the micro directional state from the thrust engine. Starting 'up', when
-        price breaks below the lowest low of the last 4 bars, flow flips to 'down' and the highest high since becomes
-        a <b>swing high</b>. In a 'down' flow, breaking above the last 4 bars' highest high flips flow to 'up' and the
-        lowest low becomes a <b>swing low</b>. A <b>flow change</b> is this flip.</p>
+      <h3 id="flow">Period Trend, Flow &amp; Trend</h3>
+      <p><b>Period Trend</b> — the <em>journal's</em> trend, and the simplest: it is set by the previous closed candle.
+        Break that candle's <b>high</b> and the period trend is <b>up</b>; break its <b>low</b> and it is <b>down</b>.
+        Prior Day, Midday Call and Result are all classified by it. This is separate from the algo's flow below —
+        the algo's flow is right for the algo, but the journal wanted its own definition.</p>
+      <p><b>Flow</b> (<code>tFlow</code>) is the algo's micro directional state from the thrust engine. Starting 'up',
+        when price breaks below the lowest low of the last 4 bars, flow flips to 'down' and the highest high since
+        becomes a <b>swing high</b>; the mirror flips it back up. A <b>flow change</b> is this flip. It drives the
+        engine's setups — <em>not</em> the journal's Period Trend.</p>
       <p><b>Trend</b> (<code>tTrend</code>) is bigger, set by a <b>break of structure</b> (BOS) — price breaking a
-        confirmed swing. Flow flips often; trend flips only on a structural break.</p>
-      <div class="callout todo"><strong>To confirm:</strong> your Prior-Day <b>G</b> ("low of a prior up-close breached,
-        or high of a prior down-close breached") looks like the daily-resolution version of a flow change. Is flow, as
-        described here, what you mean by it?</div>
+        confirmed swing. It is the "closed algo-trend" whose flip, together with a Period-Trend change, makes a Prior
+        Day an <b>R</b>.</p>
 
       <h3 id="engines">The three engines</h3>
       <table>
@@ -239,6 +243,10 @@
         <li><b>Host</b> — Railway runs the Node server with a mounted <code>/data</code> volume (journal, plan, VAPID key, push subscriptions all persist).</li>
         <li><b>Domain</b> — <code>7r4d3.net</code>, a Cloudflare-proxied CNAME to Railway. It exists because a client's network dropped TCP to Railway's IP; Cloudflare's IPs are reachable. The Railway URL still works as a fallback.</li>
         <li><b>Auth</b> — every <code>/api/*</code> route needs the <code>RM_TOKEN</code>, except <code>/api/health</code> and <code>/api/push/key</code> (neither is a secret).</li>
+        <li><b>Master account</b> — <code>RM_MASTER_LOGIN</code> (a service env var) names the account whose EAs fill the
+          shared market journal. There is no single master EA; the master is an account running one EA per symbol chart,
+          and only its instances write shared observations. Unset = any EA writes (fine for one user).
+          <code>/api/health</code> reports <code>masterLogin</code> so you can confirm it took.</li>
         <li><b>Versioning</b> — <code>RM_VERSION</code> drives both the EA and the properties dialog; the server's <code>CONTRACT_VERSION</code> is bumped with it so a stale EA can't masquerade as current.</li>
       </ul>
 
@@ -258,7 +266,8 @@
         <span class="mono">?</span>, <span class="mono">b</span>, <span class="mono">c</span>, <span class="mono">g</span>
         and compounds like <span class="mono">Y.G?</span> is still open. (You said "later".)</div>
       <div class="callout todo"><strong>Result (R) column</strong> — confirm it is today's realised day type, not something else.</div>
-      <div class="callout todo"><strong>Flow definition</strong> — confirm the thrust-based flow above matches your daily G definition.</div>
+      <div class="callout"><strong>Period Trend — defined.</strong> Prior Day / Midday Call / Result now use Period
+        Trend (break the previous candle's high = up, its low = down), separate from the algo's flow.</div>
       <div class="callout todo"><strong>T4 colour codes</strong> — <span class="mono">pY / pG / pB</span> and the
         <span class="mono">c</span> / <span class="mono">!</span> variants seen in the sheet need mapping.</div>
       <div class="callout todo"><strong>EA → push alert</strong> — add the <code>POST /api/alert</code> call so phone alerts fire, not just Discord.</div>
