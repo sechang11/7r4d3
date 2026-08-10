@@ -274,7 +274,12 @@
       <div class="callout todo"><strong>T4 colour codes</strong> — <span class="mono">pY / pG / pB</span> and the
         <span class="mono">c</span> / <span class="mono">!</span> variants seen in the sheet need mapping.</div>
       <div class="callout todo"><strong>EA → push alert</strong> — add the <code>POST /api/alert</code> call so phone alerts fire, not just Discord.</div>
-      <div class="callout todo"><strong>Auto-capture</strong> — wire Prior Day, Stalk Hit, Session Gap, HTF Break and Result to fill from the EA (the mechanism exists; only Trend and DR% are wired so far).</div>
+      <div class="callout"><strong>Auto-capture — live.</strong> Prior Day, Session Gap, Stalk Hit, HTF Break (weekly)
+        and Result all compute in the EA and fill the shared market store (6.12+ EAs).</div>
+      <div class="callout todo"><strong>Mx breach (xMx)</strong> — HTF Break does weekly now; the Mx (options-expiry
+        period) high/low breach still needs the expiry-boundary logic ported from the H1 Thrust Structure Pine.</div>
+      <div class="callout todo"><strong>Session Gap "1 deviation"</strong> — implemented as 1× the opening-range size
+        (price beyond ORhigh+range or ORlow−range). Confirm that is the deviation you mean.</div>
       <div class="callout todo"><strong>Flow Call ML</strong> — a model to predict the daily flow break, replacing the manual call.</div>
 
     </main>

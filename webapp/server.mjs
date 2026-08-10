@@ -36,7 +36,7 @@ const HOST = process.env.HOST ?? (ON_PAAS ? '0.0.0.0' : '127.0.0.1');
 
 // Contract version this server was built against. Compared to the EA's
 // RM_VERSION on every snapshot so a stale EA can't masquerade as live.
-const CONTRACT_VERSION = '6.11';
+const CONTRACT_VERSION = '6.12';
 
 // Shared secret guarding every /api/* route. Set RM_TOKEN in the environment
 // (never in source). Both the EA and the browser must present it.
@@ -353,7 +353,7 @@ const captureAuto = () => {
       if (patch[col]?.[def.key] != null) continue;                       // set earlier this pass
 
       let v = dotGet(e.state, def.from);
-      if (v == null) continue;
+      if (v == null || v === '') continue;   // '' = the EA computed nothing yet
       if (def.map)  v = def.map[String(v)] ?? v;
       if (def.round != null && typeof v === 'number') v = Number(v.toFixed(def.round));
 

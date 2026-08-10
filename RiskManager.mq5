@@ -3,7 +3,7 @@
 //|                                  Copyright 2026, MetaQuotes Ltd. |
 //|                                             https://www.mql5.com |
 //+------------------------------------------------------------------+
-#define RM_VERSION "6.11"
+#define RM_VERSION "6.12"
 
 #property copyright "Copyright 2026, MetaQuotes Ltd."
 #property link      "https://www.mql5.com"
@@ -9352,19 +9352,82 @@ int PeriodBreak(int shift)
 
 string ClassifyDay(int shift)
 {
-   int cur = PeriodBreak(shift);
-   if(cur < 0) return "";
-   if(cur == 3) return "?";                   // outside - undefined edge
-   if(cur == 0) return "Y";                   // inside - stalled
+   // Classified against the PREVIOUS candle's close direction and which of its
+   // extremes this candle breaks (per your definition):
+   //   prev up-close:   break high = B (continuation), break low  = G (reversal)
+   //   prev down-close: break low  = B (continuation), break high = G (reversal)
+   //   break neither = Y (inside);  break both = ? (outside, modifier territory)
+   double h  = iHigh (_Symbol, PERIOD_D1, shift);
+   double l  = iLow  (_Symbol, PERIOD_D1, shift);
+   double hp = iHigh (_Symbol, PERIOD_D1, shift + 1);
+   double lp = iLow  (_Symbol, PERIOD_D1, shift + 1);
+   double op = iOpen (_Symbol, PERIOD_D1, shift + 1);
+   double cp = iClose(_Symbol, PERIOD_D1, shift + 1);
+   if(h <= 0 || hp <= 0) return "";
+   bool brokeHi = h > hp, brokeLo = l < lp;
+   if(brokeHi && brokeLo) return "?";         // outside
+   if(!brokeHi && !brokeLo) return "Y";       // inside
+   bool prevUp = cp >= op;                    // previous candle up-close?
+   if(prevUp) return brokeLo ? "G" : "B";
+   return brokeHi ? "G" : "B";
+}
 
-   int prior = -1;                            // last decisive break before `shift`
-   for(int k = shift + 1; k <= shift + 6; k++)
-   {
-      int b = PeriodBreak(k);
-      if(b == 1 || b == 2) { prior = b; break; }
-   }
-   if(prior < 0) return "?";
-   return (cur == prior) ? "B" : "G";
+// ── Journal: Session Gap ────────────────────────────────────────────
+// At the morning check, is price at least 1 deviation beyond the opening range
+// (the 19:45 ET 15-minute candle)? 1 deviation = the OR's own range (high-low).
+// The server captures this at 07:00 ET. "t" / "f" / "" if the OR isn't ready.
+string JournalSessionGap()
+{
+   datetime orStart = ESTToServer(19, 45, -1);   // the session that opened last evening
+   MqlRates orBar[];
+   if(CopyRates(_Symbol, PERIOD_M15, orStart, 1, orBar) <= 0) return "";
+   if(MathAbs((long)(orBar[0].time - orStart)) >= 900)        return "";
+   double orH = orBar[0].high, orL = orBar[0].low, dev = orH - orL;
+   if(dev <= 0) return "";
+   double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   if(bid >= orH + dev || bid <= orL - dev) return "t";
+   return "f";
+}
+
+// ── Journal: Stalk Hit ──────────────────────────────────────────────
+// Did price enter either D.STK zone today? Zones are the EA's daily stalk
+// definition (upper/lower, off the prior daily candle). Latched for the day and
+// emitted only once touched, so first-write-wins records the moment it happens.
+bool g_jStalkTouched = false;
+int  g_jStalkDay     = -1;
+string JournalStalkHit()
+{
+   MqlDateTime dt; TimeToStruct(TimeCurrent(), dt);
+   if(dt.day_of_year != g_jStalkDay) { g_jStalkDay = dt.day_of_year; g_jStalkTouched = false; }
+
+   double refH = iHigh (_Symbol, PERIOD_D1, 1);
+   double refL = iLow  (_Symbol, PERIOD_D1, 1);
+   double op   = iOpen (_Symbol, PERIOD_D1, 1);
+   double cp   = iClose(_Symbol, PERIOD_D1, 1);
+   double range = refH - refL;
+   if(range <= 0) return "";
+   bool prevBull = (cp >= op);
+   double uT, uB, lT, lB;
+   if(prevBull) { uT = refH + range*0.25; uB = refH;             lT = refL + range*0.33; lB = refL + range*0.25; }
+   else         { uT = refL + range*0.75; uB = refL + range*0.66; lT = refL;             lB = refL - range*0.25; }
+
+   double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   if((bid >= uB && bid <= uT) || (bid >= lB && bid <= lT)) g_jStalkTouched = true;
+   return g_jStalkTouched ? "t" : "";
+}
+
+// ── Journal: HTF Break ──────────────────────────────────────────────
+// Weekly = previous week's high or low breached. Emitted only while beyond, so
+// it records on the break day. Mx (previous options-expiry period) is a later
+// addition - it needs the expiry-boundary logic from the Pine ported here.
+string JournalHtfBreak()
+{
+   double wH = iHigh(_Symbol, PERIOD_W1, 1);
+   double wL = iLow (_Symbol, PERIOD_W1, 1);
+   if(wH <= 0) return "";
+   double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   if(bid > wH || bid < wL) return "xW";
+   return "";
 }
 
 string BuildStateJson()
@@ -9486,6 +9549,9 @@ string BuildStateJson()
    j += "\"journal\":{";
    j += "\"priorDay\":\"" + ClassifyDay(1) + "\",";   // yesterday's day type
    j += "\"result\":\""   + ClassifyDay(0) + "\",";   // today's, firming to close
+   j += "\"sessionGap\":\"" + JournalSessionGap() + "\",";
+   j += "\"stalkHit\":\""   + JournalStalkHit()   + "\",";
+   j += "\"htfBreak\":\""   + JournalHtfBreak()   + "\",";
    j += "\"periodTrend\":" + IntegerToString(PeriodBreak(0));
    j += "},";
 
