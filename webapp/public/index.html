@@ -256,6 +256,12 @@
       <span class="desc" id="jrnlMsg"></span>
     </div>
     <div id="jrnlWrap" hidden>
+      <div class="jrnlBar" id="jrnlViewBar">
+        <span class="desc">View:</span>
+        <button class="pbtn" id="jrnlCompact" title="Short codes (T0, T1…) and tighter cells to fit more columns">Compact</button>
+        <span class="jrnlGroupToggles" id="jrnlGroups"></span>
+        <span class="jrnlSymFilter" id="jrnlSyms"></span>
+      </div>
       <div class="jrnlScroll"><table class="jtbl" id="jrnlTbl"></table></div>
       <p class="desc" style="margin:9px 0 0">
         Columns come from <code>journal-schema.json</code> — add a field there and it

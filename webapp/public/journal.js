@@ -16,13 +16,36 @@ const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 let schema = null;
 let rows = [];
 let login = 'default';
-let dirty = new Map();          // date -> pending patch, flushed on blur
 let shown = false;
 
 const api = window.RMApi;       // shared fetch wrapper (token + error handling)
 
 /** Auto fields are per-symbol only for now; index them for quick lookup. */
 const autoFields = () => schema?.auto?.perSymbol ?? [];
+
+// ── view state (persisted) ──────────────────────────────────────────
+// Renaming the codes to plain English made columns wide; these controls win the
+// density back — short codes, tighter cells, hidden groups, a symbol subset —
+// without giving up the readable labels when you want them.
+const VIEW_KEY = 'rm_jrnl_view';
+const view = Object.assign(
+  { compact: false, hiddenGroups: [], hiddenSyms: [] },
+  (() => { try { return JSON.parse(localStorage.getItem(VIEW_KEY)) || {}; } catch { return {}; } })()
+);
+const saveView = () => localStorage.setItem(VIEW_KEY, JSON.stringify(view));
+
+const groupHidden = (k) => view.hiddenGroups.includes(k);
+const symHidden   = (s) => view.hiddenSyms.includes(s);
+
+/** Short code for a per-symbol field ("T0:Type" -> "T0"), used in compact mode. */
+const shortCode = (f) => (f.was ? f.was.replace(/:.*/, '').replace(/[^A-Za-z0-9]/g, '') : f.label);
+/** Compact label for a group field — initials so Sleep/Fuel fit. */
+const shortGroup = (f) => f.label.replace('?', '').slice(0, 3);
+const headSym = (f)   => view.compact ? shortCode(f)  : f.label;
+const headGrp = (f)   => view.compact ? shortGroup(f) : f.label;
+
+const shownGroups = () => (schema?.groups ?? []).filter((g) => !groupHidden(g.key));
+const shownSyms   = () => (schema?.symbols ?? []).filter((s) => !symHidden(s));
 
 function cellInput(value, def, onCommit) {
   let el;
@@ -73,27 +96,29 @@ function render() {
   const tbl = $('jrnlTbl');
   tbl.replaceChildren();
   if (!schema) return;
+  tbl.className = 'jtbl' + (view.compact ? ' compact' : '');
 
   const per = schema.perSymbol ?? [];
-  const syms = schema.symbols ?? [];
+  const groups = shownGroups();
+  const syms = shownSyms();
   const autos = autoFields();
 
   // ── two header rows: group spans, then field names ──
   const head = tbl.createTHead();
   const h1 = head.insertRow();
   h1.insertCell().outerHTML = '<th class="stick corner" colspan="2">Week</th>';
-  for (const g of schema.groups ?? [])
+  for (const g of groups)
     h1.insertCell().outerHTML = `<th colspan="${g.fields.length}" class="grp">${g.label}</th>`;
   for (const s of syms)
     h1.insertCell().outerHTML = `<th colspan="${per.length + autos.length}" class="grp sym">${s}</th>`;
 
   const h2 = head.insertRow();
   h2.insertCell().outerHTML = '<th class="stick">Wk</th><th class="stick2">Date</th>';
-  for (const g of schema.groups ?? [])
-    for (const f of g.fields) h2.insertCell().outerHTML = `<th>${f.label}</th>`;
+  for (const g of groups)
+    for (const f of g.fields) h2.insertCell().outerHTML = `<th title="${f.def ?? f.label}">${headGrp(f)}</th>`;
   for (const _ of syms) {
-    for (const f of per)   h2.insertCell().outerHTML = `<th title="${f.hint ?? ''}">${f.label}</th>`;
-    for (const a of autos) h2.insertCell().outerHTML = `<th class="autoh" title="filled by the EA">${a.label}</th>`;
+    for (const f of per)   h2.insertCell().outerHTML = `<th title="${(f.label + ' — ' + (f.def ?? '')).replace(/"/g, '&quot;')}">${headSym(f)}</th>`;
+    for (const a of autos) h2.insertCell().outerHTML = `<th class="autoh" title="filled by the EA">${view.compact ? (a.label.length > 4 ? a.label.slice(0, 3) : a.label) : a.label}</th>`;
   }
 
   // ── one row per day, newest first ──
@@ -118,7 +143,7 @@ function render() {
     dCell.className = 'stick2';
     dCell.innerHTML = `${d.getMonth() + 1}/${d.getDate()}<span class="dow">${DOW[r.dow]}</span>`;
 
-    for (const g of schema.groups ?? [])
+    for (const g of groups)
       for (const f of g.fields) {
         const td = tr.insertCell();
         td.appendChild(cellInput(r[g.key]?.[f.key], f,
@@ -148,10 +173,53 @@ async function load() {
     const j = await api(`/api/journal?login=${encodeURIComponent(login)}&days=70`).then((r) => r.json());
     schema = j.schema;
     rows = j.rows;
+    buildViewBar();
     render();
     $('jrnlMsg').textContent = '';
   } catch (e) {
     $('jrnlMsg').textContent = `could not load: ${e.message}`;
+  }
+}
+
+// ── view controls ───────────────────────────────────────────────────
+// Built from the schema so they track whatever groups/symbols exist.
+function buildViewBar() {
+  const cBtn = $('jrnlCompact');
+  cBtn.classList.toggle('sel', view.compact);
+  cBtn.onclick = () => { view.compact = !view.compact; saveView(); cBtn.classList.toggle('sel', view.compact); render(); };
+
+  const gHost = $('jrnlGroups');
+  gHost.replaceChildren();
+  for (const g of schema.groups ?? []) {
+    const b = document.createElement('button');
+    b.className = 'pbtn' + (groupHidden(g.key) ? '' : ' sel');
+    b.textContent = g.label;
+    b.title = `Show / hide the ${g.label} columns`;
+    b.onclick = () => {
+      view.hiddenGroups = groupHidden(g.key)
+        ? view.hiddenGroups.filter((k) => k !== g.key) : [...view.hiddenGroups, g.key];
+      saveView(); b.classList.toggle('sel'); render();
+    };
+    gHost.appendChild(b);
+  }
+
+  // A collapsible "Symbols" chooser — trade a subset to fit them wide.
+  const sHost = $('jrnlSyms');
+  sHost.replaceChildren();
+  const label = document.createElement('span');
+  label.className = 'desc';
+  label.textContent = 'Symbols:';
+  sHost.appendChild(label);
+  for (const s of schema.symbols ?? []) {
+    const b = document.createElement('button');
+    b.className = 'pbtn sm' + (symHidden(s) ? '' : ' sel');
+    b.textContent = s;
+    b.onclick = () => {
+      view.hiddenSyms = symHidden(s)
+        ? view.hiddenSyms.filter((x) => x !== s) : [...view.hiddenSyms, s];
+      saveView(); b.classList.toggle('sel'); render();
+    };
+    sHost.appendChild(b);
   }
 }
 

@@ -386,3 +386,18 @@ body { padding-left: max(16px, env(safe-area-inset-left)); padding-right: max(16
   #installBtn { display: none !important; }
   header { padding-top: max(10px, env(safe-area-inset-top)); }
 }
+
+/* ── journal view controls ──────────────────────────────── */
+.jrnlBar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 9px; }
+.jrnlGroupToggles, .jrnlSymFilter { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.jrnlSymFilter { margin-left: 10px; }
+.pbtn.sm { padding: 3px 9px; font-size: 11px; min-height: 0; }
+.jrnlBar .pbtn { min-height: 0; padding: 5px 12px; }
+
+/* compact mode: short codes + tight cells to fit many symbols in one view */
+.jtbl.compact th, .jtbl.compact td { padding: 1px 3px; }
+.jtbl.compact .jcell { width: 34px; padding: 2px 3px; font-size: 11px; }
+.jtbl.compact select.jcell { width: 42px; }
+.jtbl.compact .stick2 { left: 40px; }
+.jtbl.compact .stick { width: 40px; }
+.jtbl.compact th { font-size: 9px; }
