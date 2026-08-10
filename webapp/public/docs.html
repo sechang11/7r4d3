@@ -81,6 +81,15 @@
       <p>The old spreadsheet codes (T0, p, T1…) are renamed to be self-explanatory. The mapping and definitions below
         are the working reference — <strong>the schema file <code>journal-schema.json</code> is the single source</strong>,
         so correcting a definition there updates the table, the storage and this page's intent together.</p>
+      <div class="callout"><strong>Two stores, one table.</strong> The per-symbol columns (Prior Day, Session Gap, the
+        analysis calls) are a property of the <em>market</em> — identical for every account — so they live in one
+        <strong>shared</strong> store that a master EA fills once; every client sees the same values. Habits, Trade and
+        Stance are <strong>personal</strong>, stored per client. The table you see is the two merged. So there is no
+        reason for ten EAs to each report the same market data: one master EA writes the shared columns, and each
+        client only records their own discipline.</div>
+      <p><b>View controls</b> sit above the table: <b>Compact</b> swaps the friendly labels for the short codes
+        (T0, x, p…) and tightens the cells; <b>Habits</b> / <b>Trade</b> collapse those groups; and a <b>Symbols</b>
+        chooser shows a subset — so the few symbols you trade today fit in one view.</p>
 
       <h3 id="timeline">The day, in order</h3>
       <table>

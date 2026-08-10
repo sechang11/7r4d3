@@ -229,13 +229,31 @@ const readSchema = () => {
   return { symbols: [], groups: [], perSymbol: [] };
 };
 
-const journalPath = (login) => path.join(JRNL_DIR, String(login).replace(/[^\w.-]/g, '_') + '.json');
+// Two stores, because two kinds of data live in the journal.
+//   MARKET  — per symbol per day (Prior Day, Session Gap, HTF Break, the
+//             analysis calls). A property of the market, identical for every
+//             account, so it is stored ONCE and shared. One master EA fills it;
+//             any EA reporting a symbol contributes the same value, so there is
+//             no conflict.
+//   PERSONAL — per login per day (habits, trade flags, stance, net result).
+//             Your discipline and performance, private to each client.
+// The table is the two merged; a patch is routed to whichever store owns its
+// keys — symbol keys to market, group keys to personal.
+const MARKET_FILE = path.join(JRNL_DIR, '_market.json');
+const journalPath = (login) => path.join(JRNL_DIR, 'client-' + String(login).replace(/[^\w.-]/g, '_') + '.json');
 
 const loadJournalFile = (login) => {
   try { return JSON.parse(fs.readFileSync(journalPath(login), 'utf8')); } catch { return {}; }
 };
 const saveJournalFile = (login, obj) =>
   fs.writeFileSync(journalPath(login), JSON.stringify(obj, null, 2));
+const loadMarket = () => { try { return JSON.parse(fs.readFileSync(MARKET_FILE, 'utf8')); } catch { return {}; } };
+const saveMarket = (obj) => fs.writeFileSync(MARKET_FILE, JSON.stringify(obj, null, 2));
+
+// A patch key belongs to the market store if it names a symbol; otherwise it is
+// personal (habits, trade). Migrated pre-split files stored both together, so a
+// login file that still has symbol keys is read for them too as a fallback.
+const symbolSet = () => new Set(readSchema().symbols ?? []);
 
 /** Merge one level deeper than Object.assign, so a symbol patch keeps its siblings. */
 const deepMerge = (base, patch) => {
@@ -250,15 +268,17 @@ const deepMerge = (base, patch) => {
 
 const isoDay = (d) => new Date(d).toISOString().slice(0, 10);
 
-/** The last `days` calendar days, newest first, each with whatever was saved. */
+/** The last `days` calendar days, newest first, each = personal ⊕ shared market. */
 const readJournal = (login, days) => {
-  const saved = loadJournalFile(login);
+  const personal = loadJournalFile(login);
+  const market = loadMarket();
   const out = [];
   const today = new Date(); today.setHours(12, 0, 0, 0);
   for (let i = 0; i < days; i++) {
     const d = new Date(today); d.setDate(d.getDate() - i);
     const key = isoDay(d);
-    out.push({ date: key, dow: d.getDay(), ...(saved[key] ?? {}) });
+    // personal first, then the shared market symbols layered on top
+    out.push({ date: key, dow: d.getDay(), ...(personal[key] ?? {}), ...(market[key] ?? {}) });
   }
   return out;
 };
@@ -295,15 +315,16 @@ const captureAuto = () => {
   if (defs.length === 0) return;
 
   const { day: today, hour: etHour } = etParts();
-  const byLogin = new Map();
-  const prior = new Map();   // login -> existing row for today (to not clobber)
+  // Market data is account-independent, so it lands in the ONE shared store.
+  // Any EA reporting a symbol contributes; first-write-wins means it doesn't
+  // matter which — a dedicated master EA and ten per-symbol EAs behave the same.
+  const market = loadMarket();
+  const existing = market[today] ?? {};
+  const patch = {};
 
   for (const [, e] of instances) {
-    const login = e.state?.account?.login;
-    const sym   = e.state?.symbol;
-    if (login == null || !sym) continue;
-    if (!prior.has(login)) prior.set(login, loadJournalFile(login)[today] ?? {});
-    if (!byLogin.has(login)) byLogin.set(login, {});
+    const sym = e.state?.symbol;
+    if (!sym) continue;
 
     const col = (schema.symbols ?? []).find((c) =>
       sym === c || (schema.aliases?.[c] ?? []).includes(sym) ||
@@ -311,26 +332,23 @@ const captureAuto = () => {
     if (!col) continue;
 
     for (const def of defs) {
-      // Not yet its time of day.
-      if (def.capHour != null && etHour < def.capHour) continue;
-      // Already recorded today (auto or manual) — leave it.
-      if (prior.get(login)?.[col]?.[def.key] != null) continue;
+      if (def.capHour != null && etHour < def.capHour) continue;         // not yet its time
+      if (existing[col]?.[def.key] != null) continue;                    // already set today
+      if (patch[col]?.[def.key] != null) continue;                       // set earlier this pass
 
       let v = dotGet(e.state, def.from);
       if (v == null) continue;
       if (def.map)  v = def.map[String(v)] ?? v;
       if (def.round != null && typeof v === 'number') v = Number(v.toFixed(def.round));
 
-      byLogin.get(login)[col] = { ...(byLogin.get(login)[col] ?? {}), [def.key]: v };
+      patch[col] = { ...(patch[col] ?? {}), [def.key]: v };
     }
   }
 
-  for (const [login, patch] of byLogin) {
-    if (Object.keys(patch).length === 0) continue;
-    const all = loadJournalFile(login);
-    all[today] = deepMerge(all[today] ?? {}, patch);
-    all[today].autoAt = Date.now();
-    saveJournalFile(login, all);
+  if (Object.keys(patch).length) {
+    market[today] = deepMerge(existing, patch);
+    market[today].autoAt = Date.now();
+    saveMarket(market);
   }
 };
 
@@ -619,11 +637,25 @@ const server = http.createServer(async (req, res) => {
         if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date ?? ''))) {
           return send(res, 400, { error: 'date must be YYYY-MM-DD' });
         }
-        const all = loadJournalFile(login);
-        all[date] = deepMerge(all[date] ?? {}, patch ?? {});
-        all[date].updatedAt = Date.now();
-        saveJournalFile(login, all);
-        return send(res, 200, { ok: true, date, row: all[date] });
+        // Split the patch: symbol keys are shared market data, everything else
+        // (habits, trade, stance) is this client's own.
+        const syms = symbolSet();
+        const mktPatch = {}, ownPatch = {};
+        for (const [k, v] of Object.entries(patch ?? {})) (syms.has(k) ? mktPatch : ownPatch)[k] = v;
+
+        if (Object.keys(ownPatch).length) {
+          const all = loadJournalFile(login);
+          all[date] = deepMerge(all[date] ?? {}, ownPatch);
+          all[date].updatedAt = Date.now();
+          saveJournalFile(login, all);
+        }
+        if (Object.keys(mktPatch).length) {
+          const mkt = loadMarket();
+          mkt[date] = deepMerge(mkt[date] ?? {}, mktPatch);
+          mkt[date].updatedAt = Date.now();
+          saveMarket(mkt);
+        }
+        return send(res, 200, { ok: true, date });
       } catch (e) { return send(res, 400, { error: e.message }); }
     }
 
