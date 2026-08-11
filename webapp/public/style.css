@@ -418,3 +418,25 @@ body { padding-left: max(16px, env(safe-area-inset-left)); padding-right: max(16
   margin-left: 6px; font-size: 9px; font-weight: 700; background: var(--gold);
   color: #1a1206; padding: 0 5px; border-radius: 3px; vertical-align: middle;
 }
+
+/* ── journal: click-to-edit dense grid ──────────────────── */
+/* resting cells are bare text, as narrow as their content */
+.jtbl td.jc {
+  min-width: 15px; max-width: 46px; padding: 1px 4px;
+  text-align: center; cursor: pointer; white-space: nowrap;
+  color: var(--text); font-variant-numeric: tabular-nums;
+}
+.jtbl td.jc:hover  { background: rgba(255,255,255,0.06); }
+.jtbl td.jc:focus  { outline: 1px solid var(--on); outline-offset: -1px; }
+.jtbl td.jc:empty::after { content: ''; }
+/* transient editor fills the cell without forcing it wider */
+.jedit {
+  width: 100%; min-width: 30px; margin: 0; padding: 1px 2px;
+  font: 12px/1.2 inherit; text-align: center;
+  background: var(--bg); color: var(--text);
+  border: 1px solid var(--on); border-radius: 2px;
+}
+select.jedit { min-width: 34px; }
+/* headers can shrink to match */
+.jtbl th { padding: 3px 4px; }
+.jtbl.compact th { padding: 2px 3px; }

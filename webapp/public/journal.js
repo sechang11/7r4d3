@@ -47,7 +47,8 @@ const headGrp = (f)   => view.compact ? shortGroup(f) : f.label;
 const shownGroups = () => (schema?.groups ?? []).filter((g) => !groupHidden(g.key));
 const shownSyms   = () => (schema?.symbols ?? []).filter((s) => !symHidden(s));
 
-function cellInput(value, def, onCommit) {
+// Build the transient editor control for a cell type.
+function editorFor(def, value) {
   let el;
   if (def.type === 'enum') {
     el = document.createElement('select');
@@ -55,20 +56,59 @@ function cellInput(value, def, onCommit) {
     for (const o of def.options ?? []) el.appendChild(new Option(o, o));
   } else if (def.type === 'tf') {
     el = document.createElement('select');
-    for (const [v, t] of [['', ''], ['t', 't'], ['f', 'f']]) el.appendChild(new Option(t, v));
+    for (const [v, t] of [['', '·'], ['t', 't'], ['f', 'f']]) el.appendChild(new Option(t, v));
   } else {
     el = document.createElement('input');
     el.type = (def.type === 'score' || def.type === 'number') ? 'number' : 'text';
     if (def.type === 'score') { el.min = 0; el.max = 10; }
-    if (def.hint) el.title = def.hint;
   }
-  el.className = 'jcell';
+  el.className = 'jedit';
   el.value = value ?? '';
-  if (def.width) el.style.width = def.width + 'px';
-  // Commit on blur and on Enter, not on every keystroke — one PUT per edit.
-  el.addEventListener('change', () => onCommit(el.value));
-  el.addEventListener('keydown', (e) => { if (e.key === 'Enter') el.blur(); });
   return el;
+}
+
+// A cell that shows its value as bare text (one character wide) and only becomes
+// an editor when clicked — the only way to get a truly dense, Excel-like grid,
+// since a permanent <input>/<select> can't shrink below its chrome.
+function makeCell(td, value, def, onCommit) {
+  td.classList.add('jc');
+  td.tabIndex = 0;
+  const show = (v) => {
+    td.textContent = (v == null || v === '') ? '' : v;
+    td.title = `${def.label}${def.def ? ' — ' + def.def : ''}`;
+  };
+  show(value);
+
+  let editing = false;
+  const startEdit = () => {
+    if (editing) return;
+    editing = true;
+    const cur = td.textContent;
+    const el = editorFor(def, cur);
+    td.textContent = '';
+    td.appendChild(el);
+    el.focus();
+    if (el.select) el.select();
+    const finish = (save) => {
+      if (!editing) return;
+      editing = false;
+      const nv = el.value;
+      show(nv);
+      if (save && nv !== cur) onCommit(nv);
+    };
+    el.addEventListener('blur', () => finish(true));
+    el.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); el.blur(); }
+      else if (e.key === 'Escape') { editing = false; show(cur); td.focus(); }
+    });
+    if (el.tagName === 'SELECT') el.addEventListener('change', () => el.blur());
+  };
+  td.addEventListener('click', startEdit);
+  td.addEventListener('keydown', (e) => {
+    // Type-to-edit: a printable key opens the editor pre-filled.
+    if (e.key === 'Enter') { startEdit(); }
+    else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey) { startEdit(); }
+  });
 }
 
 async function commit(date, patch) {
@@ -149,8 +189,7 @@ function render() {
     for (const g of groups)
       for (const f of g.fields) {
         const td = tr.insertCell();
-        td.appendChild(cellInput(r[g.key]?.[f.key], f,
-          (v) => commit(r.date, { [g.key]: { [f.key]: v } })));
+        makeCell(td, r[g.key]?.[f.key], f, (v) => commit(r.date, { [g.key]: { [f.key]: v } }));
       }
 
     for (const sym of syms) {
@@ -159,8 +198,7 @@ function render() {
       for (const f of per) {
         const td = tr.insertCell();
         if (!trades) { td.className = 'closed'; continue; }
-        td.appendChild(cellInput(r[sym]?.[f.key], f,
-          (v) => commit(r.date, { [sym]: { [f.key]: v } })));
+        makeCell(td, r[sym]?.[f.key], f, (v) => commit(r.date, { [sym]: { [f.key]: v } }));
       }
       for (const a of autos) {
         const td = tr.insertCell();
