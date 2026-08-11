@@ -124,16 +124,18 @@ function render() {
   // ── one row per day, newest first ──
   const body = tbl.createTBody();
   const hideEmpty = $('jrnlHideEmpty').checked;
-  let lastWeek = null;
+  let lastWeek = null, zebra = false;
 
   for (const r of rows) {
-    if (hideEmpty && isEmptyRow(r)) continue;
+    if (hideEmpty && !r.future && isEmptyRow(r)) continue;   // keep future rows even if empty
     const d = new Date(r.date + 'T12:00:00');
-    // ISO-ish week number, only used to group visually.
+    // ISO-ish week number, used to group visually and to zebra by week.
     const wk = Math.floor((d - new Date(d.getFullYear(), 0, 1)) / 604800000) + 1;
+    if (wk !== lastWeek) zebra = !zebra;                     // flip shade each new week
     const tr = body.insertRow();
     const weekend = r.dow === 0 || r.dow === 6;
-    if (weekend) tr.className = 'wknd';
+    tr.className = [zebra ? 'zebra' : '', weekend ? 'wknd' : '', r.future ? 'future' : '', r.mx ? 'mxrow' : '']
+      .filter(Boolean).join(' ');
 
     const wkCell = tr.insertCell();
     wkCell.className = 'stick';
@@ -141,7 +143,8 @@ function render() {
 
     const dCell = tr.insertCell();
     dCell.className = 'stick2';
-    dCell.innerHTML = `${d.getMonth() + 1}/${d.getDate()}<span class="dow">${DOW[r.dow]}</span>`;
+    dCell.innerHTML = `${d.getMonth() + 1}/${d.getDate()}<span class="dow">${DOW[r.dow]}</span>` +
+      (r.mx ? '<span class="mxtag">Mx</span>' : '');
 
     for (const g of groups)
       for (const f of g.fields) {

@@ -4,7 +4,7 @@
 //|                                  Copyright 2026, MetaQuotes Ltd. |
 //|                                             https://www.mql4.com |
 //+------------------------------------------------------------------+
-#define RM_VERSION "6.12"
+#define RM_VERSION "6.13"
 
 #property copyright "Copyright 2026, MetaQuotes Ltd."
 #property link      "https://www.mql4.com"
@@ -263,6 +263,7 @@ input string InpDiscordWebhook = "";  // Discord Webhook URL
 input string InpBridgeURL    = "";   // Web bridge base URL, blank = OFF (e.g. http://127.0.0.1:8787)
 input string InpBridgeToken  = "";   // Bridge shared secret (must match RM_TOKEN on the server)
 input int    InpStatePostSec = 3;    // Seconds between state POSTs
+input int    InpBackfillDays = 0;    // One-shot: backfill N days of Prior Day on attach (0=off)
 input bool   InpAllowRemote  = false;// Allow remote ARM commands from the web app
 // Separate, and deliberately off. InpAllowRemote lets the web app ARM a
 // setup - which only draws lines. This one lets it SEND the order. Keep it
@@ -9930,6 +9931,25 @@ string BridgeHeaders()
    return h;
 }
 
+// One-shot historical backfill of Prior Day. Classifies the last N daily candles
+// (shift 1..N) and posts them in shift order; the server owns the ET dates and
+// first-write-wins, so re-attaching is harmless. Master-gated server side.
+void BackfillJournal()
+{
+   if(InpBridgeURL == "" || InpBackfillDays <= 0) return;
+   int n = (int)MathMin(InpBackfillDays, 400);
+   string arr = "";
+   for(int k = 1; k <= n; k++)
+      arr += (k > 1 ? "," : "") + "\"" + ClassifyDay(k) + "\"";
+   string body = "{\"symbol\":\"" + _Symbol + "\",\"login\":" +
+                 IntegerToString(AccountInfoInteger(ACCOUNT_LOGIN)) +
+                 ",\"priorDays\":[" + arr + "]}";
+   char post[], result[]; string rh;
+   StringToCharArray(body, post, 0, StringLen(body), CP_UTF8);
+   int res = WebRequest("POST", InpBridgeURL + "/api/journal/backfill", BridgeHeaders(), 5000, post, result, rh);
+   PrintFormat("RiskManager: journal backfill %d days -> HTTP %d", n, res);
+}
+
 //+------------------------------------------------------------------+
 //| Arm a pattern by button id — the same handlers the chart buttons  |
 //| use, so a remote arm and a click produce identical lines.         |
@@ -10492,6 +10512,8 @@ int OnInit()
                   (int)ChartGetInteger(0, CHART_WIDTH_IN_PIXELS),
                   (int)ChartGetInteger(0, CHART_HEIGHT_IN_PIXELS),
                   g_uiScale, (InpUIScale > 0.05 ? " (fixed)" : " (auto)"));
+
+   BackfillJournal();   // one-shot Prior Day history if InpBackfillDays > 0
 
    g_dStkMode = 1;
    BuildDashboard();

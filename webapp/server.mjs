@@ -36,7 +36,7 @@ const HOST = process.env.HOST ?? (ON_PAAS ? '0.0.0.0' : '127.0.0.1');
 
 // Contract version this server was built against. Compared to the EA's
 // RM_VERSION on every snapshot so a stale EA can't masquerade as live.
-const CONTRACT_VERSION = '6.12';
+const CONTRACT_VERSION = '6.13';
 
 // Shared secret guarding every /api/* route. Set RM_TOKEN in the environment
 // (never in source). Both the EA and the browser must present it.
@@ -275,19 +275,47 @@ const deepMerge = (base, patch) => {
   return out;
 };
 
-const isoDay = (d) => new Date(d).toISOString().slice(0, 10);
+const isoDay = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
-/** The last `days` calendar days, newest first, each = personal ⊕ shared market. */
+// Mx boundaries: the 1st of a month, and the monthly options expiry (3rd
+// Friday). The journal scrolls forward to the next one so you can pre-fill the
+// coming block. (Holiday roll-back of the expiry is ignored here — this only
+// picks the scroll target, not a traded level.)
+const thirdFridayDom = (y, m) => {
+  const dow = new Date(y, m, 1).getDay();          // 0=Sun
+  return 1 + ((5 - dow + 7) % 7) + 14;             // first Friday + two weeks
+};
+const nextMxDate = (today) => {
+  const y = today.getFullYear(), m = today.getMonth();
+  const ny = m === 11 ? y + 1 : y, nm = m === 11 ? 0 : m + 1;
+  const cands = [
+    new Date(y, m, thirdFridayDom(y, m)),
+    new Date(ny, nm, thirdFridayDom(ny, nm)),
+    new Date(ny, nm, 1),                            // first of next month
+  ].map((d) => { d.setHours(12, 0, 0, 0); return d; }).filter((d) => d > today).sort((a, b) => a - b);
+  return cands[0] ?? null;
+};
+
+/**
+ * Rows newest-first, each = personal ⊕ shared market. Extends into the FUTURE up
+ * to the next Mx boundary (those rows carry future:true and are empty/editable),
+ * then back `days` from today.
+ */
 const readJournal = (login, days) => {
   const personal = loadJournalFile(login);
   const market = loadMarket();
-  const out = [];
   const today = new Date(); today.setHours(12, 0, 0, 0);
-  for (let i = 0; i < days; i++) {
-    const d = new Date(today); d.setDate(d.getDate() - i);
+  const mx = nextMxDate(today);
+  const start = (mx && mx > today) ? mx : today;    // newest row
+  const oldest = new Date(today); oldest.setDate(oldest.getDate() - (days - 1));
+
+  const out = [];
+  for (const d = new Date(start); d >= oldest; d.setDate(d.getDate() - 1)) {
     const key = isoDay(d);
-    // personal first, then the shared market symbols layered on top
-    out.push({ date: key, dow: d.getDay(), ...(personal[key] ?? {}), ...(market[key] ?? {}) });
+    const row = { date: key, dow: d.getDay(), ...(personal[key] ?? {}), ...(market[key] ?? {}) };
+    if (d > today) row.future = true;
+    if (mx && key === isoDay(mx)) row.mx = true;     // the boundary row itself
+    out.push(row);
   }
   return out;
 };
@@ -674,6 +702,39 @@ const server = http.createServer(async (req, res) => {
         }
         return send(res, 200, { ok: true, date });
       } catch (e) { return send(res, 400, { error: e.message }); }
+    }
+
+    // ---- backfill historical Prior Day --------------------------------
+    // The EA classifies past daily candles and posts them in shift order:
+    // priorDays[0] is ClassifyDay(1) (yesterday's candle) → today's row, matching
+    // the live capture; priorDays[i] → i days before today. The server owns the
+    // ET dates so the EA needn't wrestle broker-vs-ET day boundaries. Writes the
+    // shared store (master-gated), first-write-wins, so re-running is safe.
+    if (p === '/api/journal/backfill' && req.method === 'POST') {
+      const { symbol, login, priorDays } = JSON.parse(await readBody(req));
+      if (MASTER_LOGIN && String(login) !== MASTER_LOGIN) {
+        return send(res, 403, { error: 'not the master account' });
+      }
+      const col = (readSchema().symbols ?? []).find((c) =>
+        symbol === c || (readSchema().aliases?.[c] ?? []).includes(symbol) ||
+        String(symbol).toUpperCase().startsWith(c.toUpperCase()));
+      if (!col) return send(res, 400, { error: `no journal column for ${symbol}` });
+      if (!Array.isArray(priorDays)) return send(res, 400, { error: 'priorDays array required' });
+
+      const { day: etTodayStr } = etParts();
+      const base = new Date(etTodayStr + 'T12:00:00');
+      const mkt = loadMarket();
+      let wrote = 0;
+      priorDays.forEach((v, i) => {
+        if (v === '' || v == null) return;
+        const d = new Date(base); d.setDate(d.getDate() - i);
+        const key = isoDay(d);
+        const day = mkt[key] ?? (mkt[key] = {});
+        const cell = day[col] ?? (day[col] = {});
+        if (cell.priorDay == null) { cell.priorDay = v; wrote++; }
+      });
+      if (wrote) saveMarket(mkt);
+      return send(res, 200, { ok: true, column: col, cellsWritten: wrote });
     }
 
     if (p === '/api/commands' && req.method === 'GET') {

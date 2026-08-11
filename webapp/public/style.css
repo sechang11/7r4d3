@@ -401,3 +401,20 @@ body { padding-left: max(16px, env(safe-area-inset-left)); padding-right: max(16
 .jtbl.compact .stick2 { left: 40px; }
 .jtbl.compact .stick { width: 40px; }
 .jtbl.compact th { font-size: 9px; }
+
+/* ── journal: excel-thin, zebra by week, future rows ────── */
+.jtbl td { padding: 1px 4px; }
+.jtbl .jcell { width: 46px; padding: 2px 4px; }
+.jtbl select.jcell { width: 54px; }
+/* zebra shades whole weeks, so week blocks read as bands */
+.jtbl tr.zebra td { background: rgba(255,255,255,0.022); }
+.jtbl tr.zebra .stick, .jtbl tr.zebra .stick2 { background: #1b1d29; }
+/* future rows: dimmed, tinted, still editable for pre-fill */
+.jtbl tr.future td { background: rgba(185,155,55,0.05); }
+.jtbl tr.future .stick2 { color: var(--gold); }
+.jtbl tr.future.zebra td { background: rgba(185,155,55,0.09); }
+.jtbl tr.mxrow td { border-top: 2px solid var(--gold); }
+.mxtag {
+  margin-left: 6px; font-size: 9px; font-weight: 700; background: var(--gold);
+  color: #1a1206; padding: 0 5px; border-radius: 3px; vertical-align: middle;
+}
