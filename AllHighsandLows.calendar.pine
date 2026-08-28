@@ -1398,9 +1398,14 @@ if barstate.islast and timeframe.period=='D'
     // the 1st-of-month, not the weekday.
     date_type := dayofmonth(target_date) == 1 ? "First of Month" : "Mx Expiry"
 
+    // The projected levels belong to the CURRENT Mx block (mxm_hi/mxm_lo). When
+    // that block is a quarterly witching, draw its projection in magenta to
+    // match the fuchsia MxM marker, so the quad levels stand out on the right.
+    mxm_projClr = mx_isQuad ? color.new(color.fuchsia, 0) : mxm_clr
+
     // Draw the line
     line_start = time > target_date ? time : target_date
-    line.new(line_start, mxm_hi, line_start, mxm_lo, xloc.bar_time, color=mxm_clr, style=line.style_solid, width=2)
+    line.new(line_start, mxm_hi, line_start, mxm_lo, xloc.bar_time, color=mxm_projClr, style=line.style_solid, width=2)
 
     var mxmfrange = 0.0
     var mxmfthird = 0.0
@@ -1423,13 +1428,13 @@ if barstate.islast and timeframe.period=='D'
     mxmf0 := mxm_lo
     mxmfn25 := mxm_lo - mxmfquart
 
-    line.new(line_start, mxmf125, line_start+86400000, mxmf125, xloc.bar_time, color=mxm_clr, style=line.style_solid, width=2)
-    line.new(line_start, mxmf100, line_start+86400000, mxmf100, xloc.bar_time, color=mxm_clr, style=line.style_solid, width=2)
-    line.new(line_start, mxmf66, line_start+86400000, mxmf66, xloc.bar_time, color=mxm_clr, style=line.style_solid, width=2)
-    line.new(line_start, mxmf50, line_start+86400000, mxmf50, xloc.bar_time, color=mxm_clr, style=line.style_solid, width=2)
-    line.new(line_start, mxmf33, line_start+86400000, mxmf33, xloc.bar_time, color=mxm_clr, style=line.style_solid, width=2)
-    line.new(line_start, mxmf0, line_start+86400000, mxmf0, xloc.bar_time, color=mxm_clr, style=line.style_solid, width=2)
-    line.new(line_start, mxmfn25, line_start+86400000, mxmfn25, xloc.bar_time, color=mxm_clr, style=line.style_solid, width=2)
+    line.new(line_start, mxmf125, line_start+86400000, mxmf125, xloc.bar_time, color=mxm_projClr, style=line.style_solid, width=2)
+    line.new(line_start, mxmf100, line_start+86400000, mxmf100, xloc.bar_time, color=mxm_projClr, style=line.style_solid, width=2)
+    line.new(line_start, mxmf66, line_start+86400000, mxmf66, xloc.bar_time, color=mxm_projClr, style=line.style_solid, width=2)
+    line.new(line_start, mxmf50, line_start+86400000, mxmf50, xloc.bar_time, color=mxm_projClr, style=line.style_solid, width=2)
+    line.new(line_start, mxmf33, line_start+86400000, mxmf33, xloc.bar_time, color=mxm_projClr, style=line.style_solid, width=2)
+    line.new(line_start, mxmf0, line_start+86400000, mxmf0, xloc.bar_time, color=mxm_projClr, style=line.style_solid, width=2)
+    line.new(line_start, mxmfn25, line_start+86400000, mxmfn25, xloc.bar_time, color=mxm_projClr, style=line.style_solid, width=2)
 
 
 
