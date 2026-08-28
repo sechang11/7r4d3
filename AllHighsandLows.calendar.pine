@@ -5,30 +5,25 @@
 indicator("All_High_Lows", overlay=true, max_bars_back=1000, max_lines_count=500)
 
 
-// Function to check if a given date is a holiday
-f_isHoliday(int datetime) =>
-    // NYSE Holiday dates taken from: https://www.nyse.com/markets/hours-calendars using yyyy-MM-dd string format
-    // Only holidays that land ON a 3rd Friday matter here - those roll the Mx
-    // expiry back to the Thursday. Each is listed as BOTH the actual date and
-    // actual-1: non-lagged feeds (index/stock) read the real date, lagged feeds
-    // (DXY/spot FX, whose daily bar is stamped a day early) read date-1. The
-    // dayofweek==true_friday guard in the opex branch lets only the right one
-    // fire, so listing both is safe. Format is unpadded: "2026-6-19".
-    var _HOLIDAYS = array.from(
-         "2025-4-17", "2025-4-18",   // Good Friday  (3rd Fri of Apr 2025)
-         "2026-6-18", "2026-6-19",   // Juneteenth   (3rd Fri of Jun 2026)
-         "2027-6-17", "2027-6-18")   // Juneteenth observed (3rd Fri of Jun 2027)
-    string _date_string = str.tostring(year(datetime)) + "-" +
-                          str.tostring(month(datetime)) + "-" +
-                          str.tostring(dayofmonth(datetime))
-    bool is_holiday = (_HOLIDAYS.indexof(_date_string) >= 0) ? true : false
-    [is_holiday, _date_string] 
+// ─── Market holidays that land ON a 3rd Friday ───────────────────────────────
+// Only these matter: they push the monthly options expiry (the Mx boundary)
+// back to the Thursday. Listed as the ACTUAL holiday date, unpadded:
+// "2026-6-19", not "2026-06-19". No -1 convention — the feed lag is applied
+// separately, once, as an explicit offset (see _is_24h_broker in the Mx block).
+//   2025-4-18  Good Friday      (3rd Friday of April 2025)
+//   2026-6-19  Juneteenth       (3rd Friday of June 2026)
+//   2027-6-18  Juneteenth obs.  (19th is Saturday; 3rd Friday of June 2027)
+var _HOLIDAYS = array.from("2025-4-18", "2026-6-19", "2027-6-18")
 
-// Calculate tomorrow's timestamp
-tomorrow_timestamp = time + 86400000
+f_isHolidayYMD(int y, int m, int d) =>
+    array.indexof(_HOLIDAYS, str.tostring(y) + "-" + str.tostring(m) + "-" + str.tostring(d)) >= 0
 
-// Check if tomorrow is a holiday
-[is_tomorrow_holiday, tomorrow_date_string] = f_isHoliday(tomorrow_timestamp)
+// Day-of-month of the 3rd Friday of a given month.
+// dayofweek() returns 1=Sunday … 7=Saturday.
+f_thirdFridayDom(int y, int m) =>
+    first  = timestamp(syminfo.timezone, y, m, 1, 12, 0)
+    offset = (dayofweek.friday - dayofweek(first) + 7) % 7   // 1st → first Friday
+    1 + offset + 14
 
 truncate(number, decimals) =>
     factor = math.pow(10, decimals)
@@ -974,46 +969,69 @@ mo = request.security(syminfo.tickerid, 'M', open, lookahead=barmerge.lookahead_
 mcolor2 = color.new(#9575cd,42)
 
 
-// OPEX OPEN LINE 3RD FRIDAY
-// A day-early daily bar comes either from a 24h broker prefix OR from a lagged
-// ticker (DXY/spot FX) on any feed — TVC:DXY has prefix "TVC" but still lags,
-// which is exactly why its 3rd Friday went missing. _is_lagged_feed is defined
-// once, up by PrevD1Offset, so the two can't disagree.
+// ─── Mx BOUNDARY — monthly options expiry (3rd Friday, holiday-adjusted) ──────
+// A day-early daily bar comes from a 24h broker prefix OR a lagged ticker
+// (DXY/spot FX) on any feed — TVC:DXY has prefix "TVC" but still lags, which is
+// why its 3rd Friday went missing. _is_lagged_feed is the single source of
+// truth, defined up by PrevD1Offset.
 var _is_24h_broker = syminfo.prefix == "FOREXCOM" or syminfo.prefix == "OANDA" or _is_lagged_feed
-// Lagged feeds stamp the Friday session on Thursday, so their "3rd Friday" bar
-// reports as Thursday — match on Thursday for them, real Friday otherwise.
-var true_friday = not _is_24h_broker and (syminfo.type=="crypto" or syminfo.type=="stock" or syminfo.type=="fund" or syminfo.type=="index") ? dayofweek.friday : dayofweek.thursday
+
 var fricount = 0
 var MxM = 0.0
+// Latched, not inferred from MxM != mo: a float compare against the monthly open
+// can't tell "block started at expiry" from "the monthly open got restated",
+// which is what made the quad-witching highlight unreliable on some feeds.
+var bool mx_isExpiryBlock = false
+var int  mx_expiryMonth   = 0
+
+mx_y     = year(time)
+mx_m     = month(time)
+mx_third = f_thirdFridayDom(mx_y, mx_m)
+// Closed on the 3rd Friday ⇒ expiry moves back one day, to the Thursday.
+mx_expiry = f_isHolidayYMD(mx_y, mx_m, mx_third) ? mx_third - 1 : mx_third
+// 24h / lagged feeds stamp the daily bar a day early — apply that lag ONCE here.
+mx_target = _is_24h_broker ? mx_expiry - 1 : mx_expiry
+
 if timeframe.period=='D' and nz(mo[1])!=nz(mo[0])
     fricount := 0
     MxM := mo
-// Detect 3rd Friday directly via day-of-month (always 15th-21st) instead of counting Friday bars.
-// Counting bars breaks when a non-3rd Friday is a market holiday (e.g. Good Friday Apr 3 2026).
-opex_dom = dayofmonth(time)
-opex_third_wk = true_friday == dayofweek.friday ? (opex_dom >= 15 and opex_dom <= 21) : (opex_dom >= 14 and opex_dom <= 20)
-if timeframe.period=='D' and dayofweek(time) == true_friday and opex_third_wk and fricount < 3
+    mx_isExpiryBlock := false
+
+if timeframe.period=='D' and dayofmonth(time) == mx_target and fricount < 3
     fricount := 3
-// Holiday fallback: if the 3rd Friday itself is closed, trigger on the day before
-opex_dom_tmrw = dayofmonth(tomorrow_timestamp)
-opex_tmrw_third_wk = true_friday == dayofweek.friday ? (opex_dom_tmrw >= 15 and opex_dom_tmrw <= 21) : (opex_dom_tmrw >= 14 and opex_dom_tmrw <= 20)
-if timeframe.period=='D' and dayofweek(tomorrow_timestamp) == true_friday and opex_tmrw_third_wk and is_tomorrow_holiday and fricount < 3
-    fricount := 3
-if timeframe.period=='D'and fricount==3
+
+if timeframe.period=='D' and fricount==3
     MxM := open
+    mx_isExpiryBlock := true
+    mx_expiryMonth := month(time)
     fricount += 1
-// Get holiday status and date string
-[is_holiday, date_string] = f_isHoliday(time)    
-//if timeframe.period=='D'  
-     //label.new(bar_index, high, str.tostring(is_holiday), textcolor=color.white)
-    //label.new(bar_index, low, str.tostring(date_string), textcolor=color.white)  
-    //label.new(bar_index, low, str.tostring(fricount), textcolor=color.white)  
 
+// Quad witching: the block that begins at the Mar / Jun / Sep / Dec expiry.
+// Keyed off the month the expiry actually fired in, so a lagged first-bar-of-
+// month cannot mislabel it.
+mx_isQuad = mx_isExpiryBlock and (mx_expiryMonth==3 or mx_expiryMonth==6 or mx_expiryMonth==9 or mx_expiryMonth==12)
 
-// plot(cml and mclose? mclose:na, title="Monthly_Close",style=plot.style_circles, color=mcolor2, linewidth=2)
-plot(MxM, title="Monthly_Close",style=plot.style_circles, color=(month==12 or month==3 or month==6 or month==9) and MxM != mo? color.new(color.fuchsia,0):mcolor2, linewidth=4)
-bgColor = ((timeframe.period=='D' or timeframe.period=='60' or timeframe.period=='30' ) and dayofweek==true_friday and dayofmonth < 22 and dayofmonth > 14) ? #9575cd : na
+plot(MxM, title="Monthly_Close", style=plot.style_circles, color=mx_isQuad ? color.new(color.fuchsia,0) : mcolor2, linewidth=4)
+bgColor = ((timeframe.period=='D' or timeframe.period=='60' or timeframe.period=='30' ) and dayofmonth == mx_target) ? #9575cd : na
 // bgcolor(color=bgColor)
+
+// ── Mx DEBUG ────────────────────────────────────────────────────────────────
+// Set true, drop on a daily chart, and read off which branch fired.
+mx_debug = input.bool(false, "Mx debug label", group="Mx")
+if mx_debug and timeframe.period=='D' and barstate.islast
+    label.new(bar_index, high,
+      "3rd Fri dom = " + str.tostring(mx_third) +
+      "\nexpiry dom  = " + str.tostring(mx_expiry) +
+      "\ntarget dom  = " + str.tostring(mx_target) +
+      "\n24h/lagged  = " + str.tostring(_is_24h_broker) +
+      "\nfricount    = " + str.tostring(fricount) +
+      "\nexpiryBlock = " + str.tostring(mx_isExpiryBlock) +
+      "\nexpiryMonth = " + str.tostring(mx_expiryMonth) +
+      "\nisQuad      = " + str.tostring(mx_isQuad) +
+      "\nMxM         = " + str.tostring(MxM) +
+      "\nmo          = " + str.tostring(mo),
+      xloc.bar_index, yloc.abovebar, color.new(color.black, 20),
+      label.style_label_left, color.white, size.normal, text.align_left)
 
 
 // Yearchange = request.security(syminfo.tickerid, '12M', high, lookahead=barmerge.lookahead_on)
@@ -1327,49 +1345,27 @@ if timeframe.period=='D'
 //     third_friday = first_friday + 14 * 86400000
 //     third_friday
 
+// Next Mx boundary, projected to the right of the chart. Uses the SAME
+// f_thirdFridayDom + holiday roll-back + feed-lag offset as the live detector,
+// so the projection can't disagree with it in exactly the months that matter.
 get_next_third_friday(current_time) =>
-    current_year = year(current_time)
-    current_month = month(current_time)
+    y = year(current_time)
+    m = month(current_time)
 
-    // For non-Friday markets (forex/futures), Mx ends on the Thursday BEFORE the 3rd Friday
-    // (matches the live detection logic using dom 14-20), not the 3rd Thursday of the month.
-    // So always compute the 3rd Friday, then subtract 1 day if true_friday is Thursday.
-    weekday_offset = dayofweek.friday - true_friday
+    third_dom  = f_thirdFridayDom(y, m)
+    expiry_dom = f_isHolidayYMD(y, m, third_dom) ? third_dom - 1 : third_dom
+    target_dom = _is_24h_broker ? expiry_dom - 1 : expiry_dom
+    this_month = timestamp(syminfo.timezone, y, m, target_dom, 12, 0)
 
-    // Get the first day of the current month
-    first_of_month = timestamp(syminfo.timezone, current_year, current_month, 1, 0, 0)
-
-    // Find the first Friday of the current month
-    days_until_first_friday = dayofweek.friday - dayofweek(first_of_month)
-    if days_until_first_friday < 0
-        days_until_first_friday := days_until_first_friday + 7
-    first_friday_current_month = first_of_month + days_until_first_friday * 86400000
-
-    // Calculate the third Mx-end day of the current month
-    third_friday_current_month = first_friday_current_month + 14 * 86400000 - weekday_offset * 86400000
-
-    next_third_friday = third_friday_current_month
-
-    // If the third Mx-end day of the current month has already passed, move to the next month
-    if current_time > third_friday_current_month
-        current_month := current_month + 1
-        if current_month > 12
-            current_year := current_year + 1
-            current_month := 1
-
-        // Find the first day of the next month
-        first_day_next_month = timestamp(syminfo.timezone, current_year, current_month, 1, 0, 0)
-
-        // Find the first Friday of the next month
-        days_until_first_friday_next_month = dayofweek.friday - dayofweek(first_day_next_month)
-        if days_until_first_friday_next_month < 0
-            days_until_first_friday_next_month := days_until_first_friday_next_month + 7
-        first_friday_next_month = first_day_next_month + days_until_first_friday_next_month * 86400000
-
-        // Calculate the third Mx-end day of the next month
-        next_third_friday := first_friday_next_month + 14 * 86400000 - weekday_offset * 86400000
-
-    next_third_friday
+    result = this_month
+    if current_time > this_month
+        ny = m == 12 ? y + 1 : y
+        nm = m == 12 ? 1 : m + 1
+        nthird  = f_thirdFridayDom(ny, nm)
+        nexpiry = f_isHolidayYMD(ny, nm, nthird) ? nthird - 1 : nthird
+        ntarget = _is_24h_broker ? nexpiry - 1 : nexpiry
+        result := timestamp(syminfo.timezone, ny, nm, ntarget, 12, 0)
+    result
 
 // plot(time == get_next_third_friday(time) ? high : na, "Next Third Friday", color=color.green, linewidth=2, style)
 
@@ -1398,7 +1394,9 @@ if barstate.islast and timeframe.period=='D'
     
     // Choose the earlier of the two dates
     target_date := math.min(next_third_friday, next_first_of_month)
-    date_type := dayofweek(target_date) == dayofweek.friday ? "Third Friday" : "First of Month"
+    // Target can be a Thursday after a holiday roll-back, so key the label off
+    // the 1st-of-month, not the weekday.
+    date_type := dayofmonth(target_date) == 1 ? "First of Month" : "Mx Expiry"
 
     // Draw the line
     line_start = time > target_date ? time : target_date
