@@ -4,6 +4,32 @@
 //@version=5
 indicator("All_High_Lows", overlay=true, max_bars_back=1000, max_lines_count=500)
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Mx (monthly options expiry) — how the "calendar" detection works
+// ═══════════════════════════════════════════════════════════════════════════
+// The Mx boundary is the monthly options expiry: the 3rd Friday of each month.
+// Quarterly ones (Mar/Jun/Sep/Dec) are quad witching and drawn in magenta.
+//
+// This version COMPUTES that date instead of recognizing it from bars:
+//   1. f_thirdFridayDom(y,m) derives the 3rd-Friday day-of-month by arithmetic
+//      (1st of month → first Friday → +14). No lookup, works for any month/year.
+//   2. Holiday roll-back: if that Friday is a market holiday it moves back to
+//      the Thursday. Holidays that land on a 3rd Friday can't be computed from a
+//      formula, so _HOLIDAYS is the ONE hard-coded list (actual dates), and the
+//      only maintenance point.
+//   3. Feed-lag: some feeds stamp the daily bar a day early (24h forex, DXY, and
+//      CME futures whose session opens the prior evening). One _is_24h_broker
+//      "-1" converts the calendar date to the day-of-month that bar reports.
+// The live detector and both right-edge projections all reuse steps 1-3, so they
+// can't disagree. mx_isExpiryBlock / mx_expiryMonth are latched booleans (not a
+// MxM!=mo float compare) so the quad-witching highlight is reliable.
+//
+// (The older "band-aid" variant instead RECOGNIZED the expiry by scanning each
+// bar for "Friday AND day-of-month 15-21" plus a true_friday Thursday/Friday
+// flip — three feed-dependent conditions that could drift apart. Neither version
+// hard-codes expiry dates; only the small 3rd-Friday holiday list is stored.)
+// ═══════════════════════════════════════════════════════════════════════════
+
 
 // ─── Market holidays that land ON a 3rd Friday ───────────────────────────────
 // Only these matter: they push the monthly options expiry (the Mx boundary)
