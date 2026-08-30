@@ -14,9 +14,9 @@ indicator("All_High_Lows", overlay=true, max_bars_back=1000, max_lines_count=500
 //   1. f_thirdFridayDom(y,m) derives the 3rd-Friday day-of-month by arithmetic
 //      (1st of month → first Friday → +14). No lookup, works for any month/year.
 //   2. Holiday roll-back: if that Friday is a market holiday it moves back to
-//      the Thursday. Holidays that land on a 3rd Friday can't be computed from a
-//      formula, so _HOLIDAYS is the ONE hard-coded list (actual dates), and the
-//      only maintenance point.
+//      the Thursday. Only Good Friday (Easter−2, via Computus) and Juneteenth
+//      (June 19) can ever land on a 3rd Friday, and both are COMPUTED - there is
+//      no stored holiday list to maintain.
 //   3. Feed-lag: some feeds stamp the daily bar a day early (24h forex, DXY, and
 //      CME futures whose session opens the prior evening). One _is_24h_broker
 //      "-1" converts the calendar date to the day-of-month that bar reports.
@@ -27,22 +27,47 @@ indicator("All_High_Lows", overlay=true, max_bars_back=1000, max_lines_count=500
 // (The older "band-aid" variant instead RECOGNIZED the expiry by scanning each
 // bar for "Friday AND day-of-month 15-21" plus a true_friday Thursday/Friday
 // flip — three feed-dependent conditions that could drift apart. Neither version
-// hard-codes expiry dates; only the small 3rd-Friday holiday list is stored.)
+// hard-codes expiry dates, and this one stores no holiday dates at all.)
 // ═══════════════════════════════════════════════════════════════════════════
 
 
-// ─── Market holidays that land ON a 3rd Friday ───────────────────────────────
-// Only these matter: they push the monthly options expiry (the Mx boundary)
-// back to the Thursday. Listed as the ACTUAL holiday date, unpadded:
-// "2026-6-19", not "2026-06-19". No -1 convention — the feed lag is applied
-// separately, once, as an explicit offset (see _is_24h_broker in the Mx block).
-//   2025-4-18  Good Friday      (3rd Friday of April 2025)
-//   2026-6-19  Juneteenth       (3rd Friday of June 2026)
-//   2027-6-18  Juneteenth obs.  (19th is Saturday; 3rd Friday of June 2027)
-var _HOLIDAYS = array.from("2025-4-18", "2026-6-19", "2027-6-18")
+// ─── Market holidays that land ON a 3rd Friday — COMPUTED, not stored ─────────
+// Only a holiday falling on the 3rd Friday matters (it rolls Mx back to the
+// Thursday), and only two US market holidays can ever land there: Good Friday
+// and Juneteenth. Both are computable, so there's no list to maintain.
 
-f_isHolidayYMD(int y, int m, int d) =>
-    array.indexof(_HOLIDAYS, str.tostring(y) + "-" + str.tostring(m) + "-" + str.tostring(d)) >= 0
+// Easter Sunday (Gregorian) as [month, day], via the Anonymous Computus.
+f_easterMonthDay(int y) =>
+    a = y % 19
+    b = math.floor(y / 100)
+    c = y % 100
+    d = math.floor(b / 4)
+    e = b % 4
+    f = math.floor((b + 8) / 25)
+    g = math.floor((b - f + 1) / 3)
+    h = (19*a + b - d - g + 15) % 30
+    i = math.floor(c / 4)
+    k = c % 4
+    l = (32 + 2*e + 2*i - h - k) % 7
+    mth = math.floor((a + 11*h + 22*l) / 451)
+    emonth = math.floor((h + l - 7*mth + 114) / 31)   // 3 = March, 4 = April
+    eday   = ((h + l - 7*mth + 114) % 31) + 1
+    [int(emonth), int(eday)]
+
+// Is the date (y, m, dom) — always a 3rd Friday when we call this — a holiday?
+f_isHolidayYMD(int y, int m, int dom) =>
+    // Good Friday = Easter Sunday − 2 days (always a Friday by definition).
+    [em, ed] = f_easterMonthDay(y)
+    gfTs = timestamp(syminfo.timezone, y, em, ed, 12, 0) - 2 * 86400000
+    isGoodFri = month(gfTs) == m and dayofmonth(gfTs) == dom
+    // Juneteenth (June 19, a market holiday since 2022). It only closes a FRIDAY
+    // when the 19th is itself a Friday (observed 19th) or a Saturday (observed
+    // Friday the 18th); a Sun 19th observes Mon 20th and never hits a Friday.
+    isJuneteenth = false
+    if m == 6 and y >= 2022
+        j19 = dayofweek(timestamp(syminfo.timezone, y, 6, 19, 12, 0))
+        isJuneteenth := (j19 == dayofweek.friday and dom == 19) or (j19 == dayofweek.saturday and dom == 18)
+    isGoodFri or isJuneteenth
 
 // Day-of-month of the 3rd Friday of a given month.
 // dayofweek() returns 1=Sunday … 7=Saturday.
