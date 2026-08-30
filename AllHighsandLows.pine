@@ -4,31 +4,77 @@
 //@version=5
 indicator("All_High_Lows", overlay=true, max_bars_back=1000, max_lines_count=500)
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Mx (monthly options expiry) — how the "calendar" detection works
+// ═══════════════════════════════════════════════════════════════════════════
+// The Mx boundary is the monthly options expiry: the 3rd Friday of each month.
+// Quarterly ones (Mar/Jun/Sep/Dec) are quad witching and drawn in magenta.
+//
+// This version COMPUTES that date instead of recognizing it from bars:
+//   1. f_thirdFridayDom(y,m) derives the 3rd-Friday day-of-month by arithmetic
+//      (1st of month → first Friday → +14). No lookup, works for any month/year.
+//   2. Holiday roll-back: if that Friday is a market holiday it moves back to
+//      the Thursday. Only Good Friday (Easter−2, via Computus) and Juneteenth
+//      (June 19) can ever land on a 3rd Friday, and both are COMPUTED - there is
+//      no stored holiday list to maintain.
+//   3. Feed-lag: some feeds stamp the daily bar a day early (24h forex, DXY, and
+//      CME futures whose session opens the prior evening). One _is_24h_broker
+//      "-1" converts the calendar date to the day-of-month that bar reports.
+// The live detector and both right-edge projections all reuse steps 1-3, so they
+// can't disagree. mx_isExpiryBlock / mx_expiryMonth are latched booleans (not a
+// MxM!=mo float compare) so the quad-witching highlight is reliable.
+//
+// (The older "band-aid" variant instead RECOGNIZED the expiry by scanning each
+// bar for "Friday AND day-of-month 15-21" plus a true_friday Thursday/Friday
+// flip — three feed-dependent conditions that could drift apart. Neither version
+// hard-codes expiry dates, and this one stores no holiday dates at all.)
+// ═══════════════════════════════════════════════════════════════════════════
 
-// Function to check if a given date is a holiday
-f_isHoliday(int datetime) =>
-    // NYSE Holiday dates taken from: https://www.nyse.com/markets/hours-calendars using yyyy-MM-dd string format
-    // Only holidays that land ON a 3rd Friday matter here - those roll the Mx
-    // expiry back to the Thursday. Each is listed as BOTH the actual date and
-    // actual-1: non-lagged feeds (index/stock) read the real date, lagged feeds
-    // (DXY/spot FX, whose daily bar is stamped a day early) read date-1. The
-    // dayofweek==true_friday guard in the opex branch lets only the right one
-    // fire, so listing both is safe. Format is unpadded: "2026-6-19".
-    var _HOLIDAYS = array.from(
-         "2025-4-17", "2025-4-18",   // Good Friday  (3rd Fri of Apr 2025)
-         "2026-6-18", "2026-6-19",   // Juneteenth   (3rd Fri of Jun 2026)
-         "2027-6-17", "2027-6-18")   // Juneteenth observed (3rd Fri of Jun 2027)
-    string _date_string = str.tostring(year(datetime)) + "-" +
-                          str.tostring(month(datetime)) + "-" +
-                          str.tostring(dayofmonth(datetime))
-    bool is_holiday = (_HOLIDAYS.indexof(_date_string) >= 0) ? true : false
-    [is_holiday, _date_string] 
 
-// Calculate tomorrow's timestamp
-tomorrow_timestamp = time + 86400000
+// ─── Market holidays that land ON a 3rd Friday — COMPUTED, not stored ─────────
+// Only a holiday falling on the 3rd Friday matters (it rolls Mx back to the
+// Thursday), and only two US market holidays can ever land there: Good Friday
+// and Juneteenth. Both are computable, so there's no list to maintain.
 
-// Check if tomorrow is a holiday
-[is_tomorrow_holiday, tomorrow_date_string] = f_isHoliday(tomorrow_timestamp)
+// Easter Sunday (Gregorian) as [month, day], via the Anonymous Computus.
+f_easterMonthDay(int y) =>
+    a = y % 19
+    b = math.floor(y / 100)
+    c = y % 100
+    d = math.floor(b / 4)
+    e = b % 4
+    f = math.floor((b + 8) / 25)
+    g = math.floor((b - f + 1) / 3)
+    h = (19*a + b - d - g + 15) % 30
+    i = math.floor(c / 4)
+    k = c % 4
+    l = (32 + 2*e + 2*i - h - k) % 7
+    mth = math.floor((a + 11*h + 22*l) / 451)
+    emonth = math.floor((h + l - 7*mth + 114) / 31)   // 3 = March, 4 = April
+    eday   = ((h + l - 7*mth + 114) % 31) + 1
+    [int(emonth), int(eday)]
+
+// Is the date (y, m, dom) — always a 3rd Friday when we call this — a holiday?
+f_isHolidayYMD(int y, int m, int dom) =>
+    // Good Friday = Easter Sunday − 2 days (always a Friday by definition).
+    [em, ed] = f_easterMonthDay(y)
+    gfTs = timestamp(syminfo.timezone, y, em, ed, 12, 0) - 2 * 86400000
+    isGoodFri = month(gfTs) == m and dayofmonth(gfTs) == dom
+    // Juneteenth (June 19, a market holiday since 2022). It only closes a FRIDAY
+    // when the 19th is itself a Friday (observed 19th) or a Saturday (observed
+    // Friday the 18th); a Sun 19th observes Mon 20th and never hits a Friday.
+    isJuneteenth = false
+    if m == 6 and y >= 2022
+        j19 = dayofweek(timestamp(syminfo.timezone, y, 6, 19, 12, 0))
+        isJuneteenth := (j19 == dayofweek.friday and dom == 19) or (j19 == dayofweek.saturday and dom == 18)
+    isGoodFri or isJuneteenth
+
+// Day-of-month of the 3rd Friday of a given month.
+// dayofweek() returns 1=Sunday … 7=Saturday.
+f_thirdFridayDom(int y, int m) =>
+    first  = timestamp(syminfo.timezone, y, m, 1, 12, 0)
+    offset = (dayofweek.friday - dayofweek(first) + 7) % 7   // 1st → first Friday
+    1 + offset + 14
 
 truncate(number, decimals) =>
     factor = math.pow(10, decimals)
@@ -974,46 +1020,87 @@ mo = request.security(syminfo.tickerid, 'M', open, lookahead=barmerge.lookahead_
 mcolor2 = color.new(#9575cd,42)
 
 
-// OPEX OPEN LINE 3RD FRIDAY
-// A day-early daily bar comes either from a 24h broker prefix OR from a lagged
-// ticker (DXY/spot FX) on any feed — TVC:DXY has prefix "TVC" but still lags,
-// which is exactly why its 3rd Friday went missing. _is_lagged_feed is defined
-// once, up by PrevD1Offset, so the two can't disagree.
-var _is_24h_broker = syminfo.prefix == "FOREXCOM" or syminfo.prefix == "OANDA" or _is_lagged_feed
-// Lagged feeds stamp the Friday session on Thursday, so their "3rd Friday" bar
-// reports as Thursday — match on Thursday for them, real Friday otherwise.
-var true_friday = not _is_24h_broker and (syminfo.type=="crypto" or syminfo.type=="stock" or syminfo.type=="fund" or syminfo.type=="index") ? dayofweek.friday : dayofweek.thursday
+// ─── Mx BOUNDARY — monthly options expiry (3rd Friday, holiday-adjusted) ──────
+// A day-early daily bar comes from a 24h broker prefix, a lagged ticker
+// (DXY/spot FX), OR a CME-style futures contract. TVC:DXY has prefix "TVC" but
+// still lags; MNQ1!/ES1! stamp the daily bar at the prior-evening session open
+// (the Fri Aug 21 session opens Thu Aug 20 17:00 CT, so its dayofmonth is 20,
+// not 21) — without this, dayofmonth(time)==target never matched and fricount
+// stayed 0. syminfo.type=="futures" is added ONLY here, not to _is_lagged_feed,
+// so PrevD1Offset / the D1 plots are untouched. Mirrors the band-aid, whose
+// true_friday ternary omits "futures" and so falls through to Thursday.
+var _is_24h_broker = syminfo.prefix == "FOREXCOM" or syminfo.prefix == "OANDA" or _is_lagged_feed or syminfo.type == "futures"
+
 var fricount = 0
 var MxM = 0.0
+// Latched, not inferred from MxM != mo: a float compare against the monthly open
+// can't tell "block started at expiry" from "the monthly open got restated",
+// which is what made the quad-witching highlight unreliable on some feeds.
+var bool mx_isExpiryBlock = false
+var int  mx_expiryMonth   = 0
+// Current witching-quarter range (high/low since the last quad expiry).
+var float qtr_hi = na
+var float qtr_lo = na
+
+mx_y     = year(time)
+mx_m     = month(time)
+mx_third = f_thirdFridayDom(mx_y, mx_m)
+// Closed on the 3rd Friday ⇒ expiry moves back one day, to the Thursday.
+mx_expiry = f_isHolidayYMD(mx_y, mx_m, mx_third) ? mx_third - 1 : mx_third
+// 24h / lagged feeds stamp the daily bar a day early — apply that lag ONCE here.
+mx_target = _is_24h_broker ? mx_expiry - 1 : mx_expiry
+
 if timeframe.period=='D' and nz(mo[1])!=nz(mo[0])
     fricount := 0
     MxM := mo
-// Detect 3rd Friday directly via day-of-month (always 15th-21st) instead of counting Friday bars.
-// Counting bars breaks when a non-3rd Friday is a market holiday (e.g. Good Friday Apr 3 2026).
-opex_dom = dayofmonth(time)
-opex_third_wk = true_friday == dayofweek.friday ? (opex_dom >= 15 and opex_dom <= 21) : (opex_dom >= 14 and opex_dom <= 20)
-if timeframe.period=='D' and dayofweek(time) == true_friday and opex_third_wk and fricount < 3
+    mx_isExpiryBlock := false
+
+if timeframe.period=='D' and dayofmonth(time) == mx_target and fricount < 3
     fricount := 3
-// Holiday fallback: if the 3rd Friday itself is closed, trigger on the day before
-opex_dom_tmrw = dayofmonth(tomorrow_timestamp)
-opex_tmrw_third_wk = true_friday == dayofweek.friday ? (opex_dom_tmrw >= 15 and opex_dom_tmrw <= 21) : (opex_dom_tmrw >= 14 and opex_dom_tmrw <= 20)
-if timeframe.period=='D' and dayofweek(tomorrow_timestamp) == true_friday and opex_tmrw_third_wk and is_tomorrow_holiday and fricount < 3
-    fricount := 3
-if timeframe.period=='D'and fricount==3
+
+if timeframe.period=='D' and fricount==3
     MxM := open
+    mx_isExpiryBlock := true
+    mx_expiryMonth := month(time)
     fricount += 1
-// Get holiday status and date string
-[is_holiday, date_string] = f_isHoliday(time)    
-//if timeframe.period=='D'  
-     //label.new(bar_index, high, str.tostring(is_holiday), textcolor=color.white)
-    //label.new(bar_index, low, str.tostring(date_string), textcolor=color.white)  
-    //label.new(bar_index, low, str.tostring(fricount), textcolor=color.white)  
+    // Quarter range resets at each witching expiry (Mar/Jun/Sep/Dec) and then
+    // accumulates high/low across the quarter - the segment the quad projection
+    // draws forward, mirroring how mxm_hi/mxm_lo feed the monthly projection.
+    if (mx_expiryMonth==3 or mx_expiryMonth==6 or mx_expiryMonth==9 or mx_expiryMonth==12)
+        qtr_hi := high
+        qtr_lo := low
 
+// Accumulate the running quarter high/low once a witching block has been seen.
+if timeframe.period=='D' and not na(qtr_hi)
+    qtr_hi := math.max(qtr_hi, high)
+    qtr_lo := math.min(qtr_lo, low)
 
-// plot(cml and mclose? mclose:na, title="Monthly_Close",style=plot.style_circles, color=mcolor2, linewidth=2)
-plot(MxM, title="Monthly_Close",style=plot.style_circles, color=(month==12 or month==3 or month==6 or month==9) and MxM != mo? color.new(color.fuchsia,0):mcolor2, linewidth=4)
-bgColor = ((timeframe.period=='D' or timeframe.period=='60' or timeframe.period=='30' ) and dayofweek==true_friday and dayofmonth < 22 and dayofmonth > 14) ? #9575cd : na
+// Quad witching: the block that begins at the Mar / Jun / Sep / Dec expiry.
+// Keyed off the month the expiry actually fired in, so a lagged first-bar-of-
+// month cannot mislabel it.
+mx_isQuad = mx_isExpiryBlock and (mx_expiryMonth==3 or mx_expiryMonth==6 or mx_expiryMonth==9 or mx_expiryMonth==12)
+
+plot(MxM, title="Monthly_Close", style=plot.style_circles, color=mx_isQuad ? color.new(color.fuchsia,0) : mcolor2, linewidth=4)
+bgColor = ((timeframe.period=='D' or timeframe.period=='60' or timeframe.period=='30' ) and dayofmonth == mx_target) ? #9575cd : na
 // bgcolor(color=bgColor)
+
+// ── Mx DEBUG ────────────────────────────────────────────────────────────────
+// Set true, drop on a daily chart, and read off which branch fired.
+mx_debug = input.bool(false, "Mx debug label", group="Mx")
+if mx_debug and timeframe.period=='D' and barstate.islast
+    label.new(bar_index, high,
+      "3rd Fri dom = " + str.tostring(mx_third) +
+      "\nexpiry dom  = " + str.tostring(mx_expiry) +
+      "\ntarget dom  = " + str.tostring(mx_target) +
+      "\n24h/lagged  = " + str.tostring(_is_24h_broker) +
+      "\nfricount    = " + str.tostring(fricount) +
+      "\nexpiryBlock = " + str.tostring(mx_isExpiryBlock) +
+      "\nexpiryMonth = " + str.tostring(mx_expiryMonth) +
+      "\nisQuad      = " + str.tostring(mx_isQuad) +
+      "\nMxM         = " + str.tostring(MxM) +
+      "\nmo          = " + str.tostring(mo),
+      xloc.bar_index, yloc.abovebar, color.new(color.black, 20),
+      label.style_label_left, color.white, size.normal, text.align_left)
 
 
 // Yearchange = request.security(syminfo.tickerid, '12M', high, lookahead=barmerge.lookahead_on)
@@ -1327,53 +1414,55 @@ if timeframe.period=='D'
 //     third_friday = first_friday + 14 * 86400000
 //     third_friday
 
+// Next Mx boundary, projected to the right of the chart. Uses the SAME
+// f_thirdFridayDom + holiday roll-back + feed-lag offset as the live detector,
+// so the projection can't disagree with it in exactly the months that matter.
 get_next_third_friday(current_time) =>
-    current_year = year(current_time)
-    current_month = month(current_time)
+    y = year(current_time)
+    m = month(current_time)
 
-    // For non-Friday markets (forex/futures), Mx ends on the Thursday BEFORE the 3rd Friday
-    // (matches the live detection logic using dom 14-20), not the 3rd Thursday of the month.
-    // So always compute the 3rd Friday, then subtract 1 day if true_friday is Thursday.
-    weekday_offset = dayofweek.friday - true_friday
+    third_dom  = f_thirdFridayDom(y, m)
+    expiry_dom = f_isHolidayYMD(y, m, third_dom) ? third_dom - 1 : third_dom
+    target_dom = _is_24h_broker ? expiry_dom - 1 : expiry_dom
+    this_month = timestamp(syminfo.timezone, y, m, target_dom, 12, 0)
 
-    // Get the first day of the current month
-    first_of_month = timestamp(syminfo.timezone, current_year, current_month, 1, 0, 0)
-
-    // Find the first Friday of the current month
-    days_until_first_friday = dayofweek.friday - dayofweek(first_of_month)
-    if days_until_first_friday < 0
-        days_until_first_friday := days_until_first_friday + 7
-    first_friday_current_month = first_of_month + days_until_first_friday * 86400000
-
-    // Calculate the third Mx-end day of the current month
-    third_friday_current_month = first_friday_current_month + 14 * 86400000 - weekday_offset * 86400000
-
-    next_third_friday = third_friday_current_month
-
-    // If the third Mx-end day of the current month has already passed, move to the next month
-    if current_time > third_friday_current_month
-        current_month := current_month + 1
-        if current_month > 12
-            current_year := current_year + 1
-            current_month := 1
-
-        // Find the first day of the next month
-        first_day_next_month = timestamp(syminfo.timezone, current_year, current_month, 1, 0, 0)
-
-        // Find the first Friday of the next month
-        days_until_first_friday_next_month = dayofweek.friday - dayofweek(first_day_next_month)
-        if days_until_first_friday_next_month < 0
-            days_until_first_friday_next_month := days_until_first_friday_next_month + 7
-        first_friday_next_month = first_day_next_month + days_until_first_friday_next_month * 86400000
-
-        // Calculate the third Mx-end day of the next month
-        next_third_friday := first_friday_next_month + 14 * 86400000 - weekday_offset * 86400000
-
-    next_third_friday
+    result = this_month
+    if current_time > this_month
+        ny = m == 12 ? y + 1 : y
+        nm = m == 12 ? 1 : m + 1
+        nthird  = f_thirdFridayDom(ny, nm)
+        nexpiry = f_isHolidayYMD(ny, nm, nthird) ? nthird - 1 : nthird
+        ntarget = _is_24h_broker ? nexpiry - 1 : nexpiry
+        result := timestamp(syminfo.timezone, ny, nm, ntarget, 12, 0)
+    result
 
 // plot(time == get_next_third_friday(time) ? high : na, "Next Third Friday", color=color.green, linewidth=2, style)
 
+// Mx-boundary timestamp for a given month (3rd Friday, holiday roll-back, feed
+// lag) - shared by the quarterly-witching projection below.
+f_mxTargetTs(int y, int m) =>
+    third  = f_thirdFridayDom(y, m)
+    expiry = f_isHolidayYMD(y, m, third) ? third - 1 : third
+    target = _is_24h_broker ? expiry - 1 : expiry
+    timestamp(syminfo.timezone, y, m, target, 12, 0)
 
+// Next quarterly-witching expiry (Mar/Jun/Sep/Dec) strictly at or ahead of now -
+// i.e. where the next magenta MxM line will paint. Walks forward month by month
+// and takes the first witching month whose expiry hasn't passed.
+get_next_quad_expiry(current_time) =>
+    yy = year(current_time)
+    mm = month(current_time)
+    result = 0
+    for i = 0 to 12
+        if (mm==3 or mm==6 or mm==9 or mm==12) and result == 0
+            ts = f_mxTargetTs(yy, mm)
+            if current_time <= ts
+                result := ts
+        mm := mm + 1
+        if mm > 12
+            mm := 1
+            yy := yy + 1
+    result
 
 // Function to get the next first of the month
 get_next_first_of_month(current_time) =>
@@ -1391,6 +1480,7 @@ get_next_first_of_month(current_time) =>
 
 var target_date = 0
 var date_type = ""
+var qLines = array.new_line()   // quarterly-witching projection lines, redrawn each tick
 
 if barstate.islast and timeframe.period=='D'
     next_third_friday = get_next_third_friday(timenow)
@@ -1398,11 +1488,18 @@ if barstate.islast and timeframe.period=='D'
     
     // Choose the earlier of the two dates
     target_date := math.min(next_third_friday, next_first_of_month)
-    date_type := dayofweek(target_date) == dayofweek.friday ? "Third Friday" : "First of Month"
+    // Target can be a Thursday after a holiday roll-back, so key the label off
+    // the 1st-of-month, not the weekday.
+    date_type := dayofmonth(target_date) == 1 ? "First of Month" : "Mx Expiry"
+
+    // The projected levels belong to the CURRENT Mx block (mxm_hi/mxm_lo). When
+    // that block is a quarterly witching, draw its projection in magenta to
+    // match the fuchsia MxM marker, so the quad levels stand out on the right.
+    mxm_projClr = mx_isQuad ? color.new(color.fuchsia, 0) : mxm_clr
 
     // Draw the line
     line_start = time > target_date ? time : target_date
-    line.new(line_start, mxm_hi, line_start, mxm_lo, xloc.bar_time, color=mxm_clr, style=line.style_solid, width=2)
+    line.new(line_start, mxm_hi, line_start, mxm_lo, xloc.bar_time, color=mxm_projClr, style=line.style_solid, width=2)
 
     var mxmfrange = 0.0
     var mxmfthird = 0.0
@@ -1425,13 +1522,38 @@ if barstate.islast and timeframe.period=='D'
     mxmf0 := mxm_lo
     mxmfn25 := mxm_lo - mxmfquart
 
-    line.new(line_start, mxmf125, line_start+86400000, mxmf125, xloc.bar_time, color=mxm_clr, style=line.style_solid, width=2)
-    line.new(line_start, mxmf100, line_start+86400000, mxmf100, xloc.bar_time, color=mxm_clr, style=line.style_solid, width=2)
-    line.new(line_start, mxmf66, line_start+86400000, mxmf66, xloc.bar_time, color=mxm_clr, style=line.style_solid, width=2)
-    line.new(line_start, mxmf50, line_start+86400000, mxmf50, xloc.bar_time, color=mxm_clr, style=line.style_solid, width=2)
-    line.new(line_start, mxmf33, line_start+86400000, mxmf33, xloc.bar_time, color=mxm_clr, style=line.style_solid, width=2)
-    line.new(line_start, mxmf0, line_start+86400000, mxmf0, xloc.bar_time, color=mxm_clr, style=line.style_solid, width=2)
-    line.new(line_start, mxmfn25, line_start+86400000, mxmfn25, xloc.bar_time, color=mxm_clr, style=line.style_solid, width=2)
+    line.new(line_start, mxmf125, line_start+86400000, mxmf125, xloc.bar_time, color=mxm_projClr, style=line.style_solid, width=2)
+    line.new(line_start, mxmf100, line_start+86400000, mxmf100, xloc.bar_time, color=mxm_projClr, style=line.style_solid, width=2)
+    line.new(line_start, mxmf66, line_start+86400000, mxmf66, xloc.bar_time, color=mxm_projClr, style=line.style_solid, width=2)
+    line.new(line_start, mxmf50, line_start+86400000, mxmf50, xloc.bar_time, color=mxm_projClr, style=line.style_solid, width=2)
+    line.new(line_start, mxmf33, line_start+86400000, mxmf33, xloc.bar_time, color=mxm_projClr, style=line.style_solid, width=2)
+    line.new(line_start, mxmf0, line_start+86400000, mxmf0, xloc.bar_time, color=mxm_projClr, style=line.style_solid, width=2)
+    line.new(line_start, mxmfn25, line_start+86400000, mxmfn25, xloc.bar_time, color=mxm_projClr, style=line.style_solid, width=2)
+
+    // ── Quarterly witching projection ────────────────────────────────────────
+    // Same idea as the monthly projection above, but for the witching quarters:
+    // a vertical line at the NEXT quad expiry (where the next magenta MxM paints)
+    // spanning the CURRENT quarter's high→low range, with its levels, in magenta.
+    if not na(qtr_hi) and not na(qtr_lo) and qtr_hi > qtr_lo
+        quad_target = get_next_quad_expiry(timenow)
+        q_start     = time > quad_target ? time : quad_target
+        qClr        = color.new(color.fuchsia, 0)
+        qthird      = (qtr_hi - qtr_lo) / 3
+        qquart      = (qtr_hi - qtr_lo) / 4
+
+        // Rebuilt every tick, so clear the previous set first (no line pile-up).
+        for ln in qLines
+            line.delete(ln)
+        array.clear(qLines)
+
+        array.push(qLines, line.new(q_start, qtr_hi, q_start, qtr_lo, xloc.bar_time, color=qClr, style=line.style_solid, width=2))
+        array.push(qLines, line.new(q_start, qtr_hi + qquart,        q_start+86400000, qtr_hi + qquart,        xloc.bar_time, color=qClr, style=line.style_solid, width=2)) // 125
+        array.push(qLines, line.new(q_start, qtr_hi,                 q_start+86400000, qtr_hi,                 xloc.bar_time, color=qClr, style=line.style_solid, width=2)) // 100
+        array.push(qLines, line.new(q_start, qtr_hi - qthird,        q_start+86400000, qtr_hi - qthird,        xloc.bar_time, color=qClr, style=line.style_solid, width=2)) // 66
+        array.push(qLines, line.new(q_start, (qtr_hi + qtr_lo) / 2,  q_start+86400000, (qtr_hi + qtr_lo) / 2,  xloc.bar_time, color=qClr, style=line.style_solid, width=2)) // 50
+        array.push(qLines, line.new(q_start, qtr_lo + qthird,        q_start+86400000, qtr_lo + qthird,        xloc.bar_time, color=qClr, style=line.style_solid, width=2)) // 33
+        array.push(qLines, line.new(q_start, qtr_lo,                 q_start+86400000, qtr_lo,                 xloc.bar_time, color=qClr, style=line.style_solid, width=2)) // 0
+        array.push(qLines, line.new(q_start, qtr_lo - qquart,        q_start+86400000, qtr_lo - qquart,        xloc.bar_time, color=qClr, style=line.style_solid, width=2)) // -25
 
 
 
