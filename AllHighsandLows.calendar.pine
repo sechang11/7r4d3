@@ -970,11 +970,15 @@ mcolor2 = color.new(#9575cd,42)
 
 
 // ─── Mx BOUNDARY — monthly options expiry (3rd Friday, holiday-adjusted) ──────
-// A day-early daily bar comes from a 24h broker prefix OR a lagged ticker
-// (DXY/spot FX) on any feed — TVC:DXY has prefix "TVC" but still lags, which is
-// why its 3rd Friday went missing. _is_lagged_feed is the single source of
-// truth, defined up by PrevD1Offset.
-var _is_24h_broker = syminfo.prefix == "FOREXCOM" or syminfo.prefix == "OANDA" or _is_lagged_feed
+// A day-early daily bar comes from a 24h broker prefix, a lagged ticker
+// (DXY/spot FX), OR a CME-style futures contract. TVC:DXY has prefix "TVC" but
+// still lags; MNQ1!/ES1! stamp the daily bar at the prior-evening session open
+// (the Fri Aug 21 session opens Thu Aug 20 17:00 CT, so its dayofmonth is 20,
+// not 21) — without this, dayofmonth(time)==target never matched and fricount
+// stayed 0. syminfo.type=="futures" is added ONLY here, not to _is_lagged_feed,
+// so PrevD1Offset / the D1 plots are untouched. Mirrors the band-aid, whose
+// true_friday ternary omits "futures" and so falls through to Thursday.
+var _is_24h_broker = syminfo.prefix == "FOREXCOM" or syminfo.prefix == "OANDA" or _is_lagged_feed or syminfo.type == "futures"
 
 var fricount = 0
 var MxM = 0.0
