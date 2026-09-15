@@ -50,6 +50,12 @@ input int    InpStaggerMinMs  = 200; // Min gap between split legs (0 = all at o
 input int    InpStaggerMaxMs  = 2000;// Max gap between split legs
 input int    InpCmdPollSec   = 2;    // Seconds between command polls (when remote allowed)
 
+// Experts-log verbosity. Quiet by default so users aren't flooded; failures
+// (order rejects, "no positions", bad prices) still surface at Errors. Flip to
+// Verbose only when testing.
+enum ENUM_RM_LOG { RM_LOG_SILENT = 0, RM_LOG_ERRORS = 1, RM_LOG_VERBOSE = 2 };
+input ENUM_RM_LOG InpLogLevel = RM_LOG_ERRORS;   // Log level: Silent / Errors / Verbose (testing)
+
 //--- Per-deployment risk presets -------------------------------------
 // Each trader sets their own quick-size tiers and SL presets, so independent
 // users aren't forced onto one identical size/SL fingerprint. These seed the
@@ -2447,7 +2453,7 @@ void SendDiscordAlert(string message)
    string resultHeaders;
    int res = WebRequest("POST", InpDiscordWebhook, headers, 5000, bodyData, result, resultHeaders);
    if(res != 200 && res != 204)
-      Print("Discord webhook failed: HTTP ", res);
+      if(InpLogLevel>=RM_LOG_ERRORS)Print("Discord webhook failed: HTTP ", res);
 }
 
 //+------------------------------------------------------------------+
@@ -2582,7 +2588,7 @@ void CheckSBRKAlert()
          g_alert_dnHighAlerted = true;
          string msg = AlertMsg("\xF0\x9F\x94\xB4", "S.BRK", "broke above daily level");
          SendDiscordAlert(msg);
-         Print(msg);
+         if(InpLogLevel>=RM_LOG_VERBOSE)Print(msg);
       }
    }
 
@@ -2594,7 +2600,7 @@ void CheckSBRKAlert()
          g_alert_upLowAlerted = true;
          string msg = AlertMsg("\xF0\x9F\x94\xB4", "S.BRK", "broke below daily level");
          SendDiscordAlert(msg);
-         Print(msg);
+         if(InpLogLevel>=RM_LOG_VERBOSE)Print(msg);
       }
    }
 }
@@ -2658,7 +2664,7 @@ void CheckCHCHAlert()
          g_alert_chchAlerted = true;
          string msg = AlertMsg("\xF0\x9F\x94\xBB", "CHCH", "broke below swing low, bearish reversal");
          SendDiscordAlert(msg);
-         Print(msg);
+         if(InpLogLevel>=RM_LOG_VERBOSE)Print(msg);
       }
    }
    // Downtrend: CHCH = price breaks above swingHigh
@@ -2674,7 +2680,7 @@ void CheckCHCHAlert()
          g_alert_chchAlerted = true;
          string msg = AlertMsg("\xF0\x9F\x94\xBA", "CHCH", "broke above swing high, bullish reversal");
          SendDiscordAlert(msg);
-         Print(msg);
+         if(InpLogLevel>=RM_LOG_VERBOSE)Print(msg);
       }
    }
 }
@@ -2762,7 +2768,7 @@ void CheckDSTKAlert()
       g_alert_dstkUpperAlerted = true;
       string msg = AlertMsg("\xF0\x9F\x9F\xA1", "D.STK", "entered upper zone");
       SendDiscordAlert(msg);
-      Print(msg);
+      if(InpLogLevel>=RM_LOG_VERBOSE)Print(msg);
    }
 
    if(!g_alert_dstkLowerAlerted && bid >= lowerBot && bid <= lowerTop)
@@ -2770,7 +2776,7 @@ void CheckDSTKAlert()
       g_alert_dstkLowerAlerted = true;
       string msg = AlertMsg("\xF0\x9F\x9F\xA1", "D.STK", "entered lower zone");
       SendDiscordAlert(msg);
-      Print(msg);
+      if(InpLogLevel>=RM_LOG_VERBOSE)Print(msg);
    }
 }
 
@@ -2811,7 +2817,7 @@ void CheckD150Alert()
       g_alert_d150UpperAlerted = true;
       string msg = AlertMsg("\xF0\x9F\x94\xB4", "D.150", "reached 150 percent level");
       SendDiscordAlert(msg);
-      Print(msg);
+      if(InpLogLevel>=RM_LOG_VERBOSE)Print(msg);
    }
 
    if(!g_alert_d150LowerAlerted && bid <= levelN50)
@@ -2819,7 +2825,7 @@ void CheckD150Alert()
       g_alert_d150LowerAlerted = true;
       string msg = AlertMsg("\xF0\x9F\x94\xB5", "D.150", "reached minus 50 percent level");
       SendDiscordAlert(msg);
-      Print(msg);
+      if(InpLogLevel>=RM_LOG_VERBOSE)Print(msg);
    }
 }
 
@@ -2841,7 +2847,7 @@ void RunAlertTest()
    int idx = (int)(MathRand() % ArraySize(phrases));
    string msg = AlertMsg("\xF0\x9F\x94\x94", "TEST", phrases[idx]);
    SendDiscordAlert(msg);
-   Print(msg);
+   if(InpLogLevel>=RM_LOG_VERBOSE)Print(msg);
 }
 
 //+------------------------------------------------------------------+
@@ -6308,7 +6314,7 @@ void CheckHiddenTrail()
    if(dir < 0 && bid >= g_hiddenTrailLevel) hit = true;
    if(hit)
    {
-      Print("RM Hidden Trail: Price hit ", g_hiddenTrailLevel, " - closing all positions.");
+      if(InpLogLevel>=RM_LOG_VERBOSE)Print("RM Hidden Trail: Price hit ", g_hiddenTrailLevel, " - closing all positions.");
       SendDiscordAlert(AlertMsg("\xF0\x9F\x94\xB4", "H.TRAIL", "trail level hit, closing all positions"));
       CloseAllForSymbol();
       g_hiddenTrailActive = false;
@@ -6365,7 +6371,7 @@ void UpdateAutoTrail()
       else                g_trailH4Level = level;
       TrailSLToLevel(level);
       string src = g_trailH1Active ? "H1" : "H4";
-      Print("RM Auto Trail (", src, "): SL trailed to ", DoubleToString(level, _Digits));
+      if(InpLogLevel>=RM_LOG_VERBOSE)Print("RM Auto Trail (", src, "): SL trailed to ", DoubleToString(level, _Digits));
    }
 }
 
@@ -6553,7 +6559,7 @@ void ProcessPendingLegs()
    if(GetTickCount64() < g_legDueAt) return;
    bool ok = SendOneLeg(g_legType, g_legDir, g_legLots, g_legEntry, g_legSl, g_legTp);
    g_legsLeft--;
-   if(!ok) Print("RiskManager: split leg failed, ", g_legsLeft, " remaining.");
+   if(!ok) if(InpLogLevel>=RM_LOG_ERRORS)Print("RiskManager: split leg failed, ", g_legsLeft, " remaining.");
    if(g_legsLeft > 0) g_legDueAt = GetTickCount64() + StaggerGapMs();
 }
 
@@ -6706,7 +6712,7 @@ void ExecuteTrade()
 {
    if(!g_linesActive)
    {
-      Print("RiskManager: No order lines active.");
+      if(InpLogLevel>=RM_LOG_ERRORS)Print("RiskManager: No order lines active.");
       return;
    }
 
@@ -6718,7 +6724,7 @@ void ExecuteTrade()
       string lock = PlanSessionLockReason();
       if(lock != "")
       {
-         Print("RiskManager: ENTER REFUSED \x2014 ", lock);
+         if(InpLogLevel>=RM_LOG_VERBOSE)Print("RiskManager: ENTER REFUSED \x2014 ", lock);
          Alert("Entry blocked by your game plan: ", lock);
          return;
       }
@@ -6728,7 +6734,7 @@ void ExecuteTrade()
    double sl    = ObjectGetDouble(0, g_slLineName, OBJPROP_PRICE);
    double tp    = ObjectGetDouble(0, g_tpLineName, OBJPROP_PRICE);
    double lots  = GetCurrentLotSize();
-   if(lots <= 0) { Print("RiskManager: Lot size zero."); return; }
+   if(lots <= 0) { if(InpLogLevel>=RM_LOG_ERRORS)Print("RiskManager: Lot size zero."); return; }
 
    // Hidden order â†’ arm it instead of sending to broker
    if(g_isHiddenOrder && !g_hiddenOrderArmed)
@@ -6739,7 +6745,7 @@ void ExecuteTrade()
       ObjectSetInteger(0, g_tpLineName, OBJPROP_STYLE, STYLE_DOT);
       ObjectSetInteger(0, g_slLineName, OBJPROP_STYLE, STYLE_DOT);
       UpdateInfoLabel();
-      Print("RiskManager: Hidden order ARMED. Lots=", lots);
+      if(InpLogLevel>=RM_LOG_VERBOSE)Print("RiskManager: Hidden order ARMED. Lots=", lots);
       ChartRedraw(0);
       return;
    }
@@ -6780,12 +6786,12 @@ void ExecuteTrade()
             g_legsLeft--;
          }
       }
-      else Print("RiskManager: ", g_legsLeft, " more leg(s) queued, first in ", gap, " ms");
+      else if(InpLogLevel>=RM_LOG_VERBOSE)Print("RiskManager: ", g_legsLeft, " more leg(s) queued, first in ", gap, " ms");
    }
 
    if(successCount > 0)
    {
-      Print("RiskManager: ", successCount, "/", splitCount, " orders placed. Lots=", splitLots, " each");
+      if(InpLogLevel>=RM_LOG_VERBOSE)Print("RiskManager: ", successCount, "/", splitCount, " orders placed. Lots=", splitLots, " each");
       DeleteOrderLines();
       CancelHiddenOrder();
       g_lastOrderBtn = "";
@@ -6793,7 +6799,7 @@ void ExecuteTrade()
    }
    if(failCount > 0)
    {
-      Print("RiskManager: ", failCount, "/", splitCount, " orders FAILED. Err=", GetLastError());
+      if(InpLogLevel>=RM_LOG_ERRORS)Print("RiskManager: ", failCount, "/", splitCount, " orders FAILED. Err=", GetLastError());
       ChartRedraw(0);
    }
 }
@@ -6829,12 +6835,12 @@ void ExecuteAddLot()
 
    if(countPos == 0)
    {
-      Print("RiskManager +LOT: No open positions on ", _Symbol);
+      if(InpLogLevel>=RM_LOG_ERRORS)Print("RiskManager +LOT: No open positions on ", _Symbol);
       return;
    }
    if(countSL == 0)
    {
-      Print("RiskManager +LOT: No positions have a SL set.");
+      if(InpLogLevel>=RM_LOG_ERRORS)Print("RiskManager +LOT: No positions have a SL set.");
       return;
    }
 
@@ -6848,20 +6854,20 @@ void ExecuteAddLot()
 
    // Calculate stop distance for lot sizing
    double slDist = MathAbs(entry - avgSL);
-   Print("RiskManager +LOT: entry=", entry, " avgSL=", avgSL, " slDist=", slDist,
+   if(InpLogLevel>=RM_LOG_VERBOSE)Print("RiskManager +LOT: entry=", entry, " avgSL=", avgSL, " slDist=", slDist,
          " avgTP=", avgTP, " dir=", dir, " risk$=", g_riskValues[g_riskIndex]);
 
    if(slDist < _Point)
    {
-      Print("RiskManager +LOT: SL distance too small.");
+      if(InpLogLevel>=RM_LOG_VERBOSE)Print("RiskManager +LOT: SL distance too small.");
       return;
    }
 
    double lots = CalcLotSize(slDist);
-   Print("RiskManager +LOT: CalcLotSize returned ", lots);
+   if(InpLogLevel>=RM_LOG_VERBOSE)Print("RiskManager +LOT: CalcLotSize returned ", lots);
    if(lots <= 0)
    {
-      Print("RiskManager +LOT: Lot size zero.");
+      if(InpLogLevel>=RM_LOG_ERRORS)Print("RiskManager +LOT: Lot size zero.");
       return;
    }
 
@@ -6875,9 +6881,9 @@ void ExecuteAddLot()
       result = g_trade.Sell(lots, _Symbol, 0, avgSL, avgTP, "");
 
    if(result)
-      Print("RiskManager +LOT: Added ", lots, " lots at market. SL=", avgSL, " TP=", avgTP);
+      if(InpLogLevel>=RM_LOG_VERBOSE)Print("RiskManager +LOT: Added ", lots, " lots at market. SL=", avgSL, " TP=", avgTP);
    else
-      Print("RiskManager +LOT: FAILED. Err=", GetLastError());
+      if(InpLogLevel>=RM_LOG_ERRORS)Print("RiskManager +LOT: FAILED. Err=", GetLastError());
 
    ChartRedraw(0);
 }
@@ -6912,7 +6918,7 @@ void ToggleSetSL()
          price = PositionGetDouble(POSITION_PRICE_OPEN);
          break;
       }
-      if(dir == 0) { Print("RM SET SL: No positions on ", _Symbol); return; }
+      if(dir == 0) { if(InpLogLevel>=RM_LOG_ERRORS)Print("RM SET SL: No positions on ", _Symbol); return; }
 
       double slRange = CalcSLDistance();
       if(slRange <= 0) slRange = 50 * _Point;
@@ -6958,7 +6964,7 @@ void ToggleSetTP()
          else                              dir = -1;
          break;
       }
-      if(dir == 0) { Print("RM SET TP: No positions on ", _Symbol); return; }
+      if(dir == 0) { if(InpLogLevel>=RM_LOG_ERRORS)Print("RM SET TP: No positions on ", _Symbol); return; }
 
       double slRange = CalcSLDistance();
       if(slRange <= 0) slRange = 50 * _Point;
@@ -7330,7 +7336,7 @@ void CheckSmartTPScore()
 void ApplySetSL()
 {
    double newSL = ObjectGetDouble(0, g_setSLLineName, OBJPROP_PRICE);
-   if(newSL <= 0) { Print("RM SET SL: Invalid line price."); return; }
+   if(newSL <= 0) { if(InpLogLevel>=RM_LOG_ERRORS)Print("RM SET SL: Invalid line price."); return; }
 
    int modified = 0;
    for(int i = PositionsTotal() - 1; i >= 0; i--)
@@ -7342,9 +7348,9 @@ void ApplySetSL()
       if(g_trade.PositionModify(ticket, NormalizeDouble(newSL, _Digits), tp))
          modified++;
       else
-         Print("RM SET SL: Failed ticket=", ticket, " err=", GetLastError());
+         if(InpLogLevel>=RM_LOG_ERRORS)Print("RM SET SL: Failed ticket=", ticket, " err=", GetLastError());
    }
-   Print("RM SET SL: Modified ", modified, " positions. New SL=", newSL);
+   if(InpLogLevel>=RM_LOG_VERBOSE)Print("RM SET SL: Modified ", modified, " positions. New SL=", newSL);
 
    ObjectDelete(0, g_setSLLineName);
    g_setSLActive = false;
@@ -7356,7 +7362,7 @@ void ApplySetSL()
 void ApplySetTP()
 {
    double newTP = ObjectGetDouble(0, g_setTPLineName, OBJPROP_PRICE);
-   if(newTP <= 0) { Print("RM SET TP: Invalid line price."); return; }
+   if(newTP <= 0) { if(InpLogLevel>=RM_LOG_ERRORS)Print("RM SET TP: Invalid line price."); return; }
 
    int modified = 0;
    for(int i = PositionsTotal() - 1; i >= 0; i--)
@@ -7368,9 +7374,9 @@ void ApplySetTP()
       if(g_trade.PositionModify(ticket, sl, NormalizeDouble(newTP, _Digits)))
          modified++;
       else
-         Print("RM SET TP: Failed ticket=", ticket, " err=", GetLastError());
+         if(InpLogLevel>=RM_LOG_ERRORS)Print("RM SET TP: Failed ticket=", ticket, " err=", GetLastError());
    }
-   Print("RM SET TP: Modified ", modified, " positions. New TP=", newTP);
+   if(InpLogLevel>=RM_LOG_VERBOSE)Print("RM SET TP: Modified ", modified, " positions. New TP=", newTP);
 
    ObjectDelete(0, g_setTPLineName);
    g_setTPActive = false;
@@ -7390,7 +7396,7 @@ void HandleOrderButton(int dir, int type)
    double slDist = CalcSLDistance();
    if(slDist <= 0)
    {
-      Print("RiskManager: ERROR - No daily data for SL calc");
+      if(InpLogLevel>=RM_LOG_ERRORS)Print("RiskManager: ERROR - No daily data for SL calc");
       ChartRedraw(0);
       return;
    }
@@ -7438,7 +7444,7 @@ void HandleSwingOrderButton(int dir, int type)
    double swL = g_tt_swingLow;
    if(swH == 0 || swL == 0)
    {
-      Print("RiskManager: No swing levels available for SWING order");
+      if(InpLogLevel>=RM_LOG_ERRORS)Print("RiskManager: No swing levels available for SWING order");
       ChartRedraw(0);
       return;
    }
@@ -7489,38 +7495,38 @@ void HandleChochOrderButton(int dir)
    {
       // +CHOCH: buy stop at last swing high in downtrend
       entry = g_tt_swingHigh;
-      if(entry == 0) { Print("RiskManager: No swing high for +CHOCH"); return; }
+      if(entry == 0) { if(InpLogLevel>=RM_LOG_ERRORS)Print("RiskManager: No swing high for +CHOCH"); return; }
       if(g_chochMode == 0)
       {
          // SL Range: use daily range percentage
          double slDist = CalcSLDistance();
-         if(slDist <= 0) { Print("RiskManager: No daily data for +CHOCH SL"); return; }
+         if(slDist <= 0) { if(InpLogLevel>=RM_LOG_ERRORS)Print("RiskManager: No daily data for +CHOCH SL"); return; }
          sl = entry - slDist;
       }
       else
       {
          // Swing SL: use swing low directly
          sl = g_tt_swingLow;
-         if(sl == 0) { Print("RiskManager: No swing low for +CHOCH swing SL"); return; }
+         if(sl == 0) { if(InpLogLevel>=RM_LOG_ERRORS)Print("RiskManager: No swing low for +CHOCH swing SL"); return; }
       }
    }
    else
    {
       // -CHOCH: sell stop at last swing low in uptrend
       entry = g_tt_swingLow;
-      if(entry == 0) { Print("RiskManager: No swing low for -CHOCH"); return; }
+      if(entry == 0) { if(InpLogLevel>=RM_LOG_ERRORS)Print("RiskManager: No swing low for -CHOCH"); return; }
       if(g_chochMode == 0)
       {
          // SL Range: use daily range percentage
          double slDist = CalcSLDistance();
-         if(slDist <= 0) { Print("RiskManager: No daily data for -CHOCH SL"); return; }
+         if(slDist <= 0) { if(InpLogLevel>=RM_LOG_ERRORS)Print("RiskManager: No daily data for -CHOCH SL"); return; }
          sl = entry + slDist;
       }
       else
       {
          // Swing SL: use swing high directly
          sl = g_tt_swingHigh;
-         if(sl == 0) { Print("RiskManager: No swing high for -CHOCH swing SL"); return; }
+         if(sl == 0) { if(InpLogLevel>=RM_LOG_ERRORS)Print("RiskManager: No swing high for -CHOCH swing SL"); return; }
       }
    }
 
@@ -7549,7 +7555,7 @@ void HandleBkoOrderButton(int dir)
    g_orderType     = 2;  // stop order
    g_isMarketOrder = false;
 
-   if(g_tt_lastBosTime == 0) { Print("RiskManager: No BOS detected for BKO order"); return; }
+   if(g_tt_lastBosTime == 0) { if(InpLogLevel>=RM_LOG_ERRORS)Print("RiskManager: No BOS detected for BKO order"); return; }
 
    double entry, sl;
    if(dir > 0)
@@ -7557,16 +7563,16 @@ void HandleBkoOrderButton(int dir)
       // +BKO: buy stop at highest high since BOS swing high
       entry = FindHighestHighSince((g_tt_lastBosSwHTime > 0) ? g_tt_lastBosSwHTime : g_tt_lastBosTime);
       sl    = g_tt_lastBosSwL;
-      if(entry == 0) { Print("RiskManager: Cannot find highest high for +BKO"); return; }
-      if(sl == 0)    { Print("RiskManager: No BOS swing low for +BKO SL"); return; }
+      if(entry == 0) { if(InpLogLevel>=RM_LOG_ERRORS)Print("RiskManager: Cannot find highest high for +BKO"); return; }
+      if(sl == 0)    { if(InpLogLevel>=RM_LOG_ERRORS)Print("RiskManager: No BOS swing low for +BKO SL"); return; }
    }
    else
    {
       // -BKO: sell stop at lowest low since BOS swing low
       entry = FindLowestLowSince((g_tt_lastBosSwLTime > 0) ? g_tt_lastBosSwLTime : g_tt_lastBosTime);
       sl    = g_tt_lastBosSwH;
-      if(entry == 0) { Print("RiskManager: Cannot find lowest low for -BKO"); return; }
-      if(sl == 0)    { Print("RiskManager: No BOS swing high for -BKO SL"); return; }
+      if(entry == 0) { if(InpLogLevel>=RM_LOG_ERRORS)Print("RiskManager: Cannot find lowest low for -BKO"); return; }
+      if(sl == 0)    { if(InpLogLevel>=RM_LOG_ERRORS)Print("RiskManager: No BOS swing high for -BKO SL"); return; }
    }
 
    entry = NormalizeDouble(entry, _Digits);
@@ -7595,7 +7601,7 @@ void HandleChBoOrderButton(int dir)
    g_orderType     = 2;  // stop order
    g_isMarketOrder = false;
 
-   if(g_tt_lastBosTime == 0) { Print("RiskManager: No BOS detected for CH_BO order"); return; }
+   if(g_tt_lastBosTime == 0) { if(InpLogLevel>=RM_LOG_ERRORS)Print("RiskManager: No BOS detected for CH_BO order"); return; }
 
    double entry, sl;
    if(dir > 0)
@@ -7603,16 +7609,16 @@ void HandleChBoOrderButton(int dir)
       // +CH_BO: buy stop at highest high since last BOS swing high (anti-trend buy in bear)
       entry = FindHighestHighSince((g_tt_lastBosSwHTime > 0) ? g_tt_lastBosSwHTime : g_tt_lastBosTime);
       sl    = g_tt_lastBosSwL;
-      if(entry == 0) { Print("RiskManager: Cannot find highest high for +CH_BO"); return; }
-      if(sl == 0)    { Print("RiskManager: No BOS swing low for +CH_BO SL");      return; }
+      if(entry == 0) { if(InpLogLevel>=RM_LOG_ERRORS)Print("RiskManager: Cannot find highest high for +CH_BO"); return; }
+      if(sl == 0)    { if(InpLogLevel>=RM_LOG_ERRORS)Print("RiskManager: No BOS swing low for +CH_BO SL");      return; }
    }
    else
    {
       // -CH_BO: sell stop at lowest low since last BOS swing low (anti-trend sell in bull)
       entry = FindLowestLowSince((g_tt_lastBosSwLTime > 0) ? g_tt_lastBosSwLTime : g_tt_lastBosTime);
       sl    = g_tt_lastBosSwH;
-      if(entry == 0) { Print("RiskManager: Cannot find lowest low for -CH_BO"); return; }
-      if(sl == 0)    { Print("RiskManager: No BOS swing high for -CH_BO SL");  return; }
+      if(entry == 0) { if(InpLogLevel>=RM_LOG_ERRORS)Print("RiskManager: Cannot find lowest low for -CH_BO"); return; }
+      if(sl == 0)    { if(InpLogLevel>=RM_LOG_ERRORS)Print("RiskManager: No BOS swing high for -CH_BO SL");  return; }
    }
 
    entry = NormalizeDouble(entry, _Digits);
@@ -7744,14 +7750,14 @@ void HandleDstkOrderButton(int dir)
    ArraySetAsSeries(daily, true);
    if(CopyRates(_Symbol, PERIOD_D1, 1, 1, daily) < 1)
    {
-      Print("RiskManager: Cannot get previous daily candle for DSTK");
+      if(InpLogLevel>=RM_LOG_ERRORS)Print("RiskManager: Cannot get previous daily candle for DSTK");
       return;
    }
 
    double prevH  = daily[0].high;
    double prevL  = daily[0].low;
    double range  = prevH - prevL;
-   if(range <= 0) { Print("RiskManager: Zero range on prev day"); return; }
+   if(range <= 0) { if(InpLogLevel>=RM_LOG_ERRORS)Print("RiskManager: Zero range on prev day"); return; }
 
    bool prevBull = (daily[0].close >= daily[0].open);
 
@@ -7808,18 +7814,18 @@ void HandleRfvOrderButton(int dir)
    if(dir > 0)
    {
       entry = g_tt_swingLow;
-      if(entry == 0) { Print("RiskManager: No swing low for +R_FV"); return; }
+      if(entry == 0) { if(InpLogLevel>=RM_LOG_ERRORS)Print("RiskManager: No swing low for +R_FV"); return; }
    }
    else
    {
       entry = g_tt_swingHigh;
-      if(entry == 0) { Print("RiskManager: No swing high for -R_FV"); return; }
+      if(entry == 0) { if(InpLogLevel>=RM_LOG_ERRORS)Print("RiskManager: No swing high for -R_FV"); return; }
    }
 
    double slDist = CalcSLDistance();
    if(slDist <= 0)
    {
-      Print("RiskManager: ERROR - No daily data for R_FV SL calc");
+      if(InpLogLevel>=RM_LOG_ERRORS)Print("RiskManager: ERROR - No daily data for R_FV SL calc");
       return;
    }
 
@@ -7846,14 +7852,14 @@ void HandleBosOrderButton(int dir)
    EnsureThrustComputed();
    if((g_tt_lastBosSwH == 0 && g_tt_lastBosSwL == 0) || g_tt_lastBosTime == 0)
    {
-      Print("RiskManager: No BOS/CHOCH for BOS order"); return;
+      if(InpLogLevel>=RM_LOG_ERRORS)Print("RiskManager: No BOS/CHOCH for BOS order"); return;
    }
 
    double entry, sl, tp;
    if(dir > 0)
    {
       // +BOS buy limit: bullish, retrace from highest high toward swing low
-      if(g_tt_lastBosSwL == 0) { Print("RiskManager: No swing low for +BOS"); return; }
+      if(g_tt_lastBosSwL == 0) { if(InpLogLevel>=RM_LOG_ERRORS)Print("RiskManager: No swing low for +BOS"); return; }
       // Range starts from swing high (where BOS plotted), not from BOS break bar
       int swBar = iBarShift(_Symbol, PERIOD_M15, (g_tt_lastBosSwHTime > 0) ? g_tt_lastBosSwHTime : g_tt_lastBosTime);
       if(swBar < 0) swBar = 0;
@@ -7865,7 +7871,7 @@ void HandleBosOrderButton(int dir)
       }
       if(hh <= g_tt_lastBosSwL)
       {
-         Print("RiskManager: Highest high not above swing low"); return;
+         if(InpLogLevel>=RM_LOG_ERRORS)Print("RiskManager: Highest high not above swing low"); return;
       }
       double retrace67 = hh - (hh - g_tt_lastBosSwL) * 2.0 / 3.0;
       entry = retrace67;
@@ -7892,7 +7898,7 @@ void HandleBosOrderButton(int dir)
    else
    {
       // -BOS sell limit: bearish, retrace from lowest low toward swing high
-      if(g_tt_lastBosSwH == 0) { Print("RiskManager: No swing high for -BOS"); return; }
+      if(g_tt_lastBosSwH == 0) { if(InpLogLevel>=RM_LOG_ERRORS)Print("RiskManager: No swing high for -BOS"); return; }
       // Range starts from swing low (where BOS plotted), not from BOS break bar
       int swBar = iBarShift(_Symbol, PERIOD_M15, (g_tt_lastBosSwLTime > 0) ? g_tt_lastBosSwLTime : g_tt_lastBosTime);
       if(swBar < 0) swBar = 0;
@@ -7904,7 +7910,7 @@ void HandleBosOrderButton(int dir)
       }
       if(g_tt_lastBosSwH <= ll)
       {
-         Print("RiskManager: Lowest low not below swing high"); return;
+         if(InpLogLevel>=RM_LOG_ERRORS)Print("RiskManager: Lowest low not below swing high"); return;
       }
       double retrace67 = ll + (g_tt_lastBosSwH - ll) * 2.0 / 3.0;
       entry = retrace67;
@@ -8004,24 +8010,24 @@ void HandleChochRetraceOrderButton(int dir)
    g_isMarketOrder = false;
 
    if(g_tt_lastChochTime == 0)
-   { Print("RiskManager: No CHOCH for CH_R order"); return; }
+   { if(InpLogLevel>=RM_LOG_ERRORS)Print("RiskManager: No CHOCH for CH_R order"); return; }
    if(g_tt_lastContBosTime > g_tt_lastChochTime)
-   { Print("RiskManager: A continuation BOS occurred after last CHOCH \x2014 use BS_R"); return; }
+   { if(InpLogLevel>=RM_LOG_VERBOSE)Print("RiskManager: A continuation BOS occurred after last CHOCH \x2014 use BS_R"); return; }
    if(dir > 0 && !g_tt_lastChochIsHigh)
-   { Print("RiskManager: Latest CHOCH is down, +CH_R needs CHOCH-up"); return; }
+   { if(InpLogLevel>=RM_LOG_VERBOSE)Print("RiskManager: Latest CHOCH is down, +CH_R needs CHOCH-up"); return; }
    if(dir < 0 && g_tt_lastChochIsHigh)
-   { Print("RiskManager: Latest CHOCH is up, -CH_R needs CHOCH-down"); return; }
+   { if(InpLogLevel>=RM_LOG_VERBOSE)Print("RiskManager: Latest CHOCH is up, -CH_R needs CHOCH-down"); return; }
 
    double swH = g_tt_swingHigh, swL = g_tt_swingLow;
-   if(swH == 0 || swL == 0) { Print("RiskManager: No swing levels for CH_R"); return; }
+   if(swH == 0 || swL == 0) { if(InpLogLevel>=RM_LOG_ERRORS)Print("RiskManager: No swing levels for CH_R"); return; }
    double swingFilter = (dir > 0) ? swL : swH;
    double entry;
    if(!FindDeepestWickFVG(g_tt_lastChochTime, dir, swingFilter, entry))
-   { Print("RiskManager: No unfilled wick FVG for CH_R"); return; }
+   { if(InpLogLevel>=RM_LOG_ERRORS)Print("RiskManager: No unfilled wick FVG for CH_R"); return; }
 
    double sl = (dir > 0) ? swL : swH;
    if((dir > 0 && entry <= sl) || (dir < 0 && entry >= sl))
-   { Print("RiskManager: CH_R entry/SL inverted"); return; }
+   { if(InpLogLevel>=RM_LOG_VERBOSE)Print("RiskManager: CH_R entry/SL inverted"); return; }
 
    entry = NormalizeDouble(entry, _Digits);
    sl    = NormalizeDouble(sl,    _Digits);
@@ -8045,24 +8051,24 @@ void HandleBosRetraceFvgOrderButton(int dir)
    g_isMarketOrder = false;
 
    if(g_tt_lastContBosTime == 0)
-   { Print("RiskManager: No continuation BOS for BS_R order"); return; }
+   { if(InpLogLevel>=RM_LOG_ERRORS)Print("RiskManager: No continuation BOS for BS_R order"); return; }
    if(g_tt_lastChochTime > g_tt_lastContBosTime)
-   { Print("RiskManager: A CHOCH occurred after last BOS \x2014 use CH_R"); return; }
+   { if(InpLogLevel>=RM_LOG_VERBOSE)Print("RiskManager: A CHOCH occurred after last BOS \x2014 use CH_R"); return; }
    if(dir > 0 && !g_tt_lastContBosIsHigh)
-   { Print("RiskManager: Latest BOS is down, +BS_R needs BOS-up"); return; }
+   { if(InpLogLevel>=RM_LOG_VERBOSE)Print("RiskManager: Latest BOS is down, +BS_R needs BOS-up"); return; }
    if(dir < 0 && g_tt_lastContBosIsHigh)
-   { Print("RiskManager: Latest BOS is up, -BS_R needs BOS-down"); return; }
+   { if(InpLogLevel>=RM_LOG_VERBOSE)Print("RiskManager: Latest BOS is up, -BS_R needs BOS-down"); return; }
 
    double swH = g_tt_swingHigh, swL = g_tt_swingLow;
-   if(swH == 0 || swL == 0) { Print("RiskManager: No swing levels for BS_R"); return; }
+   if(swH == 0 || swL == 0) { if(InpLogLevel>=RM_LOG_ERRORS)Print("RiskManager: No swing levels for BS_R"); return; }
    double swingFilter = (dir > 0) ? swL : swH;
    double entry;
    if(!FindDeepestWickFVG(g_tt_lastContBosTime, dir, swingFilter, entry))
-   { Print("RiskManager: No unfilled wick FVG for BS_R"); return; }
+   { if(InpLogLevel>=RM_LOG_ERRORS)Print("RiskManager: No unfilled wick FVG for BS_R"); return; }
 
    double sl = (dir > 0) ? swL : swH;
    if((dir > 0 && entry <= sl) || (dir < 0 && entry >= sl))
-   { Print("RiskManager: BS_R entry/SL inverted"); return; }
+   { if(InpLogLevel>=RM_LOG_VERBOSE)Print("RiskManager: BS_R entry/SL inverted"); return; }
 
    entry = NormalizeDouble(entry, _Digits);
    sl    = NormalizeDouble(sl,    _Digits);
@@ -8089,11 +8095,11 @@ void HandleChochContinuationOrderButton(int dir)
    {
       // +CH_C: trend bullish (1), flow down (2), Up-BOS armed.
       if(g_tt_tTrend != 1 || g_tt_tFlow != 2 || !g_tt_check4UpBos)
-      { Print("RiskManager: +CH_C requires bullish trend with down-flow & Up-BOS armed"); return; }
+      { if(InpLogLevel>=RM_LOG_VERBOSE)Print("RiskManager: +CH_C requires bullish trend with down-flow & Up-BOS armed"); return; }
       double swH = g_tt_swingHigh, swL = g_tt_swingLow;
-      if(swH == 0 || swL == 0) { Print("RiskManager: No swing levels for +CH_C"); return; }
+      if(swH == 0 || swL == 0) { if(InpLogLevel>=RM_LOG_ERRORS)Print("RiskManager: No swing levels for +CH_C"); return; }
       double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
-      if(ask >= swH) { Print("RiskManager: Price already broke swing high \x2014 +CH_C invalid"); return; }
+      if(ask >= swH) { if(InpLogLevel>=RM_LOG_ERRORS)Print("RiskManager: Price already broke swing high \x2014 +CH_C invalid"); return; }
       double entry = NormalizeDouble(swH, _Digits);
       double sl    = NormalizeDouble(swL, _Digits);
       double slDist  = MathAbs(entry - sl);
@@ -8105,11 +8111,11 @@ void HandleChochContinuationOrderButton(int dir)
    else
    {
       if(g_tt_tTrend != 2 || g_tt_tFlow != 1 || !g_tt_check4DnBos)
-      { Print("RiskManager: -CH_C requires bearish trend with up-flow & Dn-BOS armed"); return; }
+      { if(InpLogLevel>=RM_LOG_VERBOSE)Print("RiskManager: -CH_C requires bearish trend with up-flow & Dn-BOS armed"); return; }
       double swH = g_tt_swingHigh, swL = g_tt_swingLow;
-      if(swH == 0 || swL == 0) { Print("RiskManager: No swing levels for -CH_C"); return; }
+      if(swH == 0 || swL == 0) { if(InpLogLevel>=RM_LOG_ERRORS)Print("RiskManager: No swing levels for -CH_C"); return; }
       double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
-      if(bid <= swL) { Print("RiskManager: Price already broke swing low \x2014 -CH_C invalid"); return; }
+      if(bid <= swL) { if(InpLogLevel>=RM_LOG_ERRORS)Print("RiskManager: Price already broke swing low \x2014 -CH_C invalid"); return; }
       double entry = NormalizeDouble(swL, _Digits);
       double sl    = NormalizeDouble(swH, _Digits);
       double slDist  = MathAbs(entry - sl);
@@ -8141,20 +8147,20 @@ void HandleUfvReversionOrderButton(int dir)
    g_isMarketOrder = true;
 
    double swH = g_tt_swingHigh, swL = g_tt_swingLow;
-   if(swH == 0 || swL == 0) { Print("RiskManager: No swing levels for UFV"); return; }
+   if(swH == 0 || swL == 0) { if(InpLogLevel>=RM_LOG_ERRORS)Print("RiskManager: No swing levels for UFV"); return; }
 
    double entry, sl, tp;
    if(dir < 0)
    {
       // -UFV: bullish trend, price has overshot above swing high → market sell.
-      if(g_tt_tTrend != 1) { Print("RiskManager: -UFV requires bullish trend"); return; }
+      if(g_tt_tTrend != 1) { if(InpLogLevel>=RM_LOG_VERBOSE)Print("RiskManager: -UFV requires bullish trend"); return; }
       double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
-      if(bid <= swH) { Print("RiskManager: -UFV waits for bid > swing high"); return; }
-      if(g_tt_swingLowTime == 0) { Print("RiskManager: -UFV missing swing low time"); return; }
+      if(bid <= swH) { if(InpLogLevel>=RM_LOG_VERBOSE)Print("RiskManager: -UFV waits for bid > swing high"); return; }
+      if(g_tt_swingLowTime == 0) { if(InpLogLevel>=RM_LOG_ERRORS)Print("RiskManager: -UFV missing swing low time"); return; }
       double hh = FindHighestHighSince(g_tt_swingLowTime);
-      if(hh <= 0) { Print("RiskManager: -UFV cannot find highest high since swing low"); return; }
+      if(hh <= 0) { if(InpLogLevel>=RM_LOG_ERRORS)Print("RiskManager: -UFV cannot find highest high since swing low"); return; }
       double range = hh - swL;
-      if(range <= 0) { Print("RiskManager: -UFV invalid range (hh <= swL)"); return; }
+      if(range <= 0) { if(InpLogLevel>=RM_LOG_ERRORS)Print("RiskManager: -UFV invalid range (hh <= swL)"); return; }
       entry = bid;
       sl    = entry + range;
       double slDist  = sl - entry;
@@ -8164,14 +8170,14 @@ void HandleUfvReversionOrderButton(int dir)
    else
    {
       // +UFV: bearish trend, price has overshot below swing low → market buy.
-      if(g_tt_tTrend != 2) { Print("RiskManager: +UFV requires bearish trend"); return; }
+      if(g_tt_tTrend != 2) { if(InpLogLevel>=RM_LOG_VERBOSE)Print("RiskManager: +UFV requires bearish trend"); return; }
       double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
-      if(ask >= swL) { Print("RiskManager: +UFV waits for ask < swing low"); return; }
-      if(g_tt_swingHighTime == 0) { Print("RiskManager: +UFV missing swing high time"); return; }
+      if(ask >= swL) { if(InpLogLevel>=RM_LOG_VERBOSE)Print("RiskManager: +UFV waits for ask < swing low"); return; }
+      if(g_tt_swingHighTime == 0) { if(InpLogLevel>=RM_LOG_ERRORS)Print("RiskManager: +UFV missing swing high time"); return; }
       double ll = FindLowestLowSince(g_tt_swingHighTime);
-      if(ll <= 0) { Print("RiskManager: +UFV cannot find lowest low since swing high"); return; }
+      if(ll <= 0) { if(InpLogLevel>=RM_LOG_ERRORS)Print("RiskManager: +UFV cannot find lowest low since swing high"); return; }
       double range = swH - ll;
-      if(range <= 0) { Print("RiskManager: +UFV invalid range (swH <= ll)"); return; }
+      if(range <= 0) { if(InpLogLevel>=RM_LOG_ERRORS)Print("RiskManager: +UFV invalid range (swH <= ll)"); return; }
       entry = ask;
       sl    = entry - range;
       double slDist  = entry - sl;
@@ -8646,7 +8652,7 @@ void CheckEquityTPSL()
    // TP hit
    if(g_eqTPActive && g_eqTPPct > 0 && pctChange >= g_eqTPPct)
    {
-      Print(StringFormat("RiskManager: Equity TP hit! +%.1f%% (Balance $%.0f -> Equity $%.0f). Closing %s.",
+      if(InpLogLevel>=RM_LOG_VERBOSE)Print(StringFormat("RiskManager: Equity TP hit! +%.1f%% (Balance $%.0f -> Equity $%.0f). Closing %s.",
                          pctChange, g_eqBaseline, equity, _Symbol));
       SendDiscordAlert(AlertMsg("\xE2\x9C\x85", "EQ TP", StringFormat("+%.1f%% from balance, closing all positions", pctChange)));
       CloseAllPositions();
@@ -8659,7 +8665,7 @@ void CheckEquityTPSL()
    // SL hit
    if(g_eqSLActive && g_eqSLPct > 0 && pctChange <= -g_eqSLPct)
    {
-      Print(StringFormat("RiskManager: Equity SL hit! %.1f%% (Balance $%.0f -> Equity $%.0f). Closing %s.",
+      if(InpLogLevel>=RM_LOG_VERBOSE)Print(StringFormat("RiskManager: Equity SL hit! %.1f%% (Balance $%.0f -> Equity $%.0f). Closing %s.",
                          pctChange, g_eqBaseline, equity, _Symbol));
       SendDiscordAlert(AlertMsg("\xF0\x9F\x9B\x91", "EQ SL", StringFormat("%.1f%% from balance, closing all positions", pctChange)));
       CloseAllPositions();
@@ -8688,7 +8694,7 @@ void MoveAllSLToBreakeven()
       if(g_trade.PositionModify(ticket, entry, tp))
          moved++;
    }
-   Print("RiskManager: Moved ", moved, " position(s) SL to breakeven on ", _Symbol);
+   if(InpLogLevel>=RM_LOG_VERBOSE)Print("RiskManager: Moved ", moved, " position(s) SL to breakeven on ", _Symbol);
 }
 
 //+------------------------------------------------------------------+
@@ -8700,7 +8706,7 @@ void CreateMatrixLines(string aboveName, string belowName, string timeName,
    double deviation = CalcSLDistance();
    if(deviation <= 0)
    {
-      Print("RiskManager: Cannot create matrix â€” no daily data.");
+      if(InpLogLevel>=RM_LOG_ERRORS)Print("RiskManager: Cannot create matrix â€” no daily data.");
       return;
    }
 
@@ -8766,7 +8772,7 @@ void ToggleExitMatrix()
       g_exitMatrixActive = true;
    }
    ObjectSetInteger(0, "RM_ExitMatrix", OBJPROP_BGCOLOR, GetBtnNormalColor("RM_ExitMatrix"));
-   Print("RiskManager: Exit Matrix ", g_exitMatrixActive ? "ON" : "OFF");
+   if(InpLogLevel>=RM_LOG_VERBOSE)Print("RiskManager: Exit Matrix ", g_exitMatrixActive ? "ON" : "OFF");
 }
 
 //+------------------------------------------------------------------+
@@ -8785,7 +8791,7 @@ void TogglePartialsMatrix()
       g_partialMatrixActive = true;
    }
    ObjectSetInteger(0, "RM_PartialsMatrix", OBJPROP_BGCOLOR, GetBtnNormalColor("RM_PartialsMatrix"));
-   Print("RiskManager: Partials Matrix ", g_partialMatrixActive ? "ON" : "OFF");
+   if(InpLogLevel>=RM_LOG_VERBOSE)Print("RiskManager: Partials Matrix ", g_partialMatrixActive ? "ON" : "OFF");
 }
 
 //+------------------------------------------------------------------+
@@ -8822,7 +8828,7 @@ void CheckExitMatrix()
    if(!g_exitMatrixActive) return;
    if(CheckMatrixTrigger(g_exitAboveName, g_exitBelowName, g_exitTimeName))
    {
-      Print("RiskManager: Exit Matrix triggered â€” closing all for ", _Symbol);
+      if(InpLogLevel>=RM_LOG_VERBOSE)Print("RiskManager: Exit Matrix triggered â€” closing all for ", _Symbol);
       CloseAllForSymbol();
       ToggleExitMatrix();
    }
@@ -8836,7 +8842,7 @@ void CheckPartialsMatrix()
    if(!g_partialMatrixActive) return;
    if(CheckMatrixTrigger(g_partAboveName, g_partBelowName, g_partTimeName))
    {
-      Print("RiskManager: Partials Matrix triggered â€” 50%% partial for ", _Symbol);
+      if(InpLogLevel>=RM_LOG_VERBOSE)Print("RiskManager: Partials Matrix triggered â€” 50%% partial for ", _Symbol);
       ClosePartial(0.50);
       TogglePartialsMatrix();
    }
@@ -8858,7 +8864,7 @@ void ToggleBeMtx()
       g_beMtxActive = true;
    }
    ObjectSetInteger(0, "RM_BeMtx", OBJPROP_BGCOLOR, GetBtnNormalColor("RM_BeMtx"));
-   Print("RiskManager: BE Matrix ", g_beMtxActive ? "ON" : "OFF");
+   if(InpLogLevel>=RM_LOG_VERBOSE)Print("RiskManager: BE Matrix ", g_beMtxActive ? "ON" : "OFF");
 }
 
 //+------------------------------------------------------------------+
@@ -8869,7 +8875,7 @@ void CheckBeMtx()
    if(!g_beMtxActive) return;
    if(CheckMatrixTrigger(g_beAboveName, g_beBelowName, g_beTimeName))
    {
-      Print("RiskManager: BE Matrix triggered â€” moving SL to breakeven for ", _Symbol);
+      if(InpLogLevel>=RM_LOG_VERBOSE)Print("RiskManager: BE Matrix triggered â€” moving SL to breakeven for ", _Symbol);
       MoveAllSLToBreakeven();
       ToggleBeMtx();
    }
@@ -8891,7 +8897,7 @@ void ToggleCnclMtx()
       g_cnclMtxActive = true;
    }
    ObjectSetInteger(0, "RM_CnclMtx", OBJPROP_BGCOLOR, GetBtnNormalColor("RM_CnclMtx"));
-   Print("RiskManager: Cancel MTX ", g_cnclMtxActive ? "ON" : "OFF");
+   if(InpLogLevel>=RM_LOG_VERBOSE)Print("RiskManager: Cancel MTX ", g_cnclMtxActive ? "ON" : "OFF");
 }
 
 //+------------------------------------------------------------------+
@@ -8902,7 +8908,7 @@ void CheckCnclMtx()
    if(!g_cnclMtxActive) return;
    if(CheckMatrixTrigger(g_cnclAboveName, g_cnclBelowName, g_cnclTimeName))
    {
-      Print("RiskManager: Cancel MTX triggered – cancelling pending orders for ", _Symbol);
+      if(InpLogLevel>=RM_LOG_VERBOSE)Print("RiskManager: Cancel MTX triggered – cancelling pending orders for ", _Symbol);
       CancelOrdersForSymbol();
       ToggleCnclMtx();
    }
@@ -8929,9 +8935,9 @@ void CancelOrdersForSymbol()
       if(g_trade.OrderDelete(ticket))
          cancelled++;
       else
-         Print("RM CancelOrdersForSymbol: Failed ticket=", ticket, " err=", GetLastError());
+         if(InpLogLevel>=RM_LOG_ERRORS)Print("RM CancelOrdersForSymbol: Failed ticket=", ticket, " err=", GetLastError());
    }
-   Print("RiskManager: Cancelled ", cancelled, " pending orders for ", _Symbol);
+   if(InpLogLevel>=RM_LOG_VERBOSE)Print("RiskManager: Cancelled ", cancelled, " pending orders for ", _Symbol);
 }
 
 //+------------------------------------------------------------------+
@@ -8993,13 +8999,13 @@ void CheckHiddenOrder()
       if(result) successCount++;
    }
 
-   Print("RiskManager: Hidden order triggered. ", successCount, "/", splitCount, " filled. Lots=", splitLots, " each");
+   if(InpLogLevel>=RM_LOG_VERBOSE)Print("RiskManager: Hidden order triggered. ", successCount, "/", splitCount, " filled. Lots=", splitLots, " each");
    DeleteOrderLines();
    CancelHiddenOrder();
    g_lastOrderBtn = "";
 
    if(successCount < splitCount)
-      Print("RiskManager: Hidden order partial fail. Err=", GetLastError());
+      if(InpLogLevel>=RM_LOG_ERRORS)Print("RiskManager: Hidden order partial fail. Err=", GetLastError());
    ChartRedraw(0);
 }
 
@@ -9041,7 +9047,7 @@ void CancelAllOrders()
       if(ticket == 0) continue;
       g_trade.OrderDelete(ticket);
    }
-   Print("RiskManager: Cancelled all pending orders.");
+   if(InpLogLevel>=RM_LOG_VERBOSE)Print("RiskManager: Cancelled all pending orders.");
 }
 
 //+------------------------------------------------------------------+
@@ -9771,9 +9777,9 @@ void PostState()
       if(!warned)
       {
          if(res == 401)
-            Print("RM bridge: 401 unauthorised \x2014 InpBridgeToken does not match the server's RM_TOKEN.");
+            if(InpLogLevel>=RM_LOG_ERRORS)Print("RM bridge: 401 unauthorised \x2014 InpBridgeToken does not match the server's RM_TOKEN.");
          else
-            Print("RM bridge: state POST failed HTTP ", res, " err=", GetLastError());
+            if(InpLogLevel>=RM_LOG_ERRORS)Print("RM bridge: state POST failed HTTP ", res, " err=", GetLastError());
          warned = true;
       }
    }
@@ -9850,7 +9856,7 @@ void BackfillJournal()
    char post[], result[]; string rh;
    StringToCharArray(body, post, 0, StringLen(body), CP_UTF8);
    int res = WebRequest("POST", InpBridgeURL + "/api/journal/backfill", BridgeHeaders(), 5000, post, result, rh);
-   PrintFormat("RiskManager: journal backfill %d days -> HTTP %d", n, res);
+   if(InpLogLevel>=RM_LOG_VERBOSE)PrintFormat("RiskManager: journal backfill %d days -> HTTP %d", n, res);
 }
 
 //+------------------------------------------------------------------+
@@ -10109,7 +10115,7 @@ void PollCommands()
 
    ok = DispatchRemote(action, button, body, note);
 
-   Print("RM bridge: command #", id, " ", action, " ", button, " -> ", ok ? "OK" : "REFUSED", " (", note, ")");
+   if(InpLogLevel>=RM_LOG_VERBOSE)Print("RM bridge: command #", id, " ", action, " ", button, " -> ", ok ? "OK" : "REFUSED", " (", note, ")");
    AckCommand(id, ok, note);
 }
 
@@ -10423,7 +10429,7 @@ int OnInit()
    // are ever handed over for a support ticket or dispute - and the on-chart
    // badge answers "which build is running?" without writing anything.
    if(InpDebugLog)
-      PrintFormat("v%s | %s %s | chart %dx%d px | ui %.2fx%s",
+      if(InpLogLevel>=RM_LOG_VERBOSE)PrintFormat("v%s | %s %s | chart %dx%d px | ui %.2fx%s",
                   RM_VERSION, _Symbol, EnumToString((ENUM_TIMEFRAMES)Period()),
                   (int)ChartGetInteger(0, CHART_WIDTH_IN_PIXELS),
                   (int)ChartGetInteger(0, CHART_HEIGHT_IN_PIXELS),
@@ -10868,7 +10874,7 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
          if(blocked != "")
          {
             ObjectSetInteger(0, sparam, OBJPROP_STATE, false);
-            Print("RiskManager: REFUSED ", sparam, " \x2014 ", blocked);
+            if(InpLogLevel>=RM_LOG_VERBOSE)Print("RiskManager: REFUSED ", sparam, " \x2014 ", blocked);
             Alert("Blocked by your game plan: ", blocked);
             return;
          }
@@ -11308,7 +11314,7 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
       if(sparam == "RM_BtnD150"){ ToggleDaily150(); ObjectSetInteger(0, sparam, OBJPROP_STATE, false); return; }
       if(sparam == "RM_BtnDisarm")
       {
-         if(!DisarmSetup()) Print("RiskManager: nothing armed to disarm.");
+         if(!DisarmSetup()) if(InpLogLevel>=RM_LOG_VERBOSE)Print("RiskManager: nothing armed to disarm.");
          ObjectSetInteger(0, sparam, OBJPROP_STATE, false);
          return;
       }
