@@ -315,7 +315,7 @@ bool   g_dailyLvlActive   = false;
 int    g_dStkMode         = 0;   // 0=off, 1=all (3mo), 2=today only
 bool   g_dmxLabelActive   = false;
 bool   g_smxActive        = true;    // S.MTX swing matrix label on chart
-bool   g_h4MtxActive     = true;    // H4.MTX swing matrix label on chart
+bool   g_h4MtxActive     = false;   // H4.MTX swing matrix label on chart (drawing off by default; engine g_h4_active stays on)
 
 // â”€â”€ H1 Thrust Test System â”€â”€
 bool   g_tt_pivotActive   = false;
@@ -488,6 +488,14 @@ int    g_btnW[];
 int    g_btnH[];
 int    g_btnCount = 0;
 
+// Every dashboard panel object (button/label/rect) is registered here as it is
+// created, so a page switch can delete exactly the previous page's panel and
+// nothing else - chart drawings are made with ObjectCreate directly and are
+// never in this list, so they survive a page flip.
+string g_dashObj[];
+int    g_dashObjCount = 0;
+int    g_dashPage     = 1;   // 1 = trade panel, 2 = chart-drawing columns
+
 CTrade g_trade;
 
 //+------------------------------------------------------------------+
@@ -515,6 +523,24 @@ void RegisterBtn(string name, int x, int y, int w, int h)
    g_btnW[idx] = w;
    g_btnH[idx] = h;
    g_btnCount++;
+}
+
+// Track every panel object for clean page teardown.
+void RegisterDashObj(string name)
+{
+   int idx = g_dashObjCount;
+   ArrayResize(g_dashObj, idx + 1);
+   g_dashObj[idx] = name;
+   g_dashObjCount++;
+}
+
+// Delete the panel objects from the last build (leaves chart drawings alone).
+void ClearDashboardObjects()
+{
+   for(int i = 0; i < g_dashObjCount; i++)
+      ObjectDelete(0, g_dashObj[i]);
+   g_dashObjCount = 0;
+   ArrayResize(g_dashObj, 0);
 }
 
 //+------------------------------------------------------------------+
@@ -752,6 +778,7 @@ void CreateButton(string name, int x, int y, int w, int h,
    ObjectSetInteger(0, name, OBJPROP_STATE, false);
    ObjectSetInteger(0, name, OBJPROP_ZORDER, 100);
    RegisterBtn(name, x, y, w, h);
+   RegisterDashObj(name);
 }
 
 //+------------------------------------------------------------------+
@@ -769,6 +796,7 @@ void CreateLabel(string name, int x, int y, string text, color clr, int fontSize
    ObjectSetInteger(0, name, OBJPROP_COLOR, clr);
    ObjectSetInteger(0, name, OBJPROP_CORNER, CORNER_LEFT_UPPER);
    ObjectSetInteger(0, name, OBJPROP_ZORDER, 100);
+   RegisterDashObj(name);
 }
 
 //+------------------------------------------------------------------+
@@ -788,6 +816,7 @@ void CreateBgRect(string name, int x, int y, int w, int h, color clr, color bord
    ObjectSetInteger(0, name, OBJPROP_CORNER, CORNER_LEFT_UPPER);
    ObjectSetInteger(0, name, OBJPROP_BACK, false);
    ObjectSetInteger(0, name, OBJPROP_ZORDER, 100);
+   RegisterDashObj(name);
 }
 
 //+------------------------------------------------------------------+
@@ -809,6 +838,7 @@ void SetToggleGroup(string prefix, int count, int selected, color onClr, color o
 void BuildDashboard()
 {
    g_btnCount = 0;
+   ClearDashboardObjects();   // remove the previous page's panel before rebuilding
 
    int x   = PANEL_X;
    int y   = PANEL_Y;
@@ -831,14 +861,33 @@ void BuildDashboard()
 
    int cx = x + pad;
 
-   // â”€â”€ Gold outer frame â”€â”€
-   CreateBgRect("RM_Frame", x - 3, y - 3, panelW + 6, panelH + 6, CLR_BORDER_GOLD, CLR_BORDER_GOLD);
-   CreateBgRect("RM_BG", x, y, panelW, panelH, CLR_PANEL_BG, CLR_PANEL_BG);
-
-   // â”€â”€ Hide/Show toggle button (always visible, sits above panel) â”€â”€
+   // â”€â”€ PAGE toggle + Hide button: both pages, top-left, on their own row â”€â”€
+   CreateButton("RM_BtnPage", x - 3, y - 3 - UI(58), UI(78), UI(24),
+                g_dashPage == 1 ? "CHART \x25B8" : "\x25C2 TRADE",
+                CLR_BTN_OFF, CLR_TEXT, FONT_SIZE_LBL);
+   ObjectSetString(0, "RM_BtnPage", OBJPROP_TOOLTIP,
+      "Switch dashboard page\nPage 1: trade panel\nPage 2: chart-drawing toggles");
    CreateButton("RM_BtnHide", x - 3, y - 3 - UI(30), UI(36), UI(26), "\\x25C0",
                 CLR_BTN_OFF, CLR_TEXT, FONT_SIZE_LBL);
    ObjectSetString(0, "RM_BtnHide", OBJPROP_TOOLTIP, "Toggle dashboard visibility (X key)");
+
+   // â”€â”€ Page 2: chart-drawing columns, in the space the trade panel frees up â”€â”€
+   if(g_dashPage == 2)
+   {
+      int p2H  = panelH;                 // first cut - tune with the enlargement pass
+      int colW = 60 + 2 * 8;             // matches the column width math below
+      BuildRightPanel(x, y, p2H);
+      int tp2  = x + 8 + colW + 6;
+      BuildTestPanel(tp2, y, p2H);
+      int ap2  = tp2 + 8 + colW + 6;
+      BuildAlertsPanel(ap2, y, p2H);
+      ChartRedraw(0);
+      return;
+   }
+
+   // â”€â”€ Gold outer frame (page 1) â”€â”€
+   CreateBgRect("RM_Frame", x - 3, y - 3, panelW + 6, panelH + 6, CLR_BORDER_GOLD, CLR_BORDER_GOLD);
+   CreateBgRect("RM_BG", x, y, panelW, panelH, CLR_PANEL_BG, CLR_PANEL_BG);
 
    // Stalk toggle. Bridge posting is deliberately lazy when a chart is flat
    // and unattended; this is how you tell it you are actually watching.
@@ -1206,28 +1255,11 @@ void BuildDashboard()
    g_mainPanelBottom = y + panelH + 3;
 
    // â•â•â•â•â•â•â•â•â•â•â• Tools Panel â•â•â•â•â•â•â•â•â•â•â•
-   BuildToolsPanel(x, g_mainPanelBottom + 8, panelW, cx);
-
-   // â•â•â•â•â•â•â•â•â•â•â• Right Panel (Chart Tools) â•â•â•â•â•â•â•â•â•â•â•
-   int toolsAtY = g_mainPanelBottom + 8;
-   int toolsH2 = 12 + LABEL_H + BTN_H + SECTION_GAP + BTN_H + BTN_GAP + BTN_H + 14;
-   int toolsFrameBottom = toolsAtY - 3 + toolsH2 + 6;
-   int rpTopY = y - 3;
-   int rpTotalH = toolsFrameBottom - rpTopY;
+// Tools panel moved to the top-right, where the drawing columns used to
+   // sit, so it no longer lives below the main panel under MT5's one-click
+   // trade panel. The chart-drawing columns now live on page 2.
    int rpLeftEdge = x - 3 + panelW + 6;
-   BuildRightPanel(rpLeftEdge, rpTopY, rpTotalH);
-
-   // â•â•â•â•â•â•â•â•â•â•â• Test Panel (Thrust Structure) â•â•â•â•â•â•â•â•â•â•â•
-   int rpBtnW_calc = 60;
-   int rpPad_calc  = 8;
-   int rpW_calc    = rpBtnW_calc + 2 * rpPad_calc;    // 76
-   int tpLeftEdge  = rpLeftEdge + 8 + rpW_calc + 6;    // right edge of right panel frame
-   BuildTestPanel(tpLeftEdge, rpTopY, rpTotalH);
-
-   // â•â•â•â•â•â•â•â•â•â•â• Alerts Panel (Discord Alerts) â•â•â•â•â•â•â•â•â•â•â•
-   int tpW_calc = 60 + 2 * 8;   // same width calc as test panel
-   int apLeftEdge = tpLeftEdge + 8 + tpW_calc + 6;
-   BuildAlertsPanel(apLeftEdge, rpTopY, rpTotalH);
+   BuildToolsPanel(rpLeftEdge, y - 3, panelW, rpLeftEdge + pad);
 
    ChartRedraw(0);
 }
@@ -11301,6 +11333,9 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
          || StringFind(sparam, "RM_TP_") == 0
       || StringFind(sparam, "RM_AP_") == 0)
       { ObjectSetInteger(0, sparam, OBJPROP_STATE, false); return; }
+
+      // â”€â”€ Page toggle â”€â”€
+      if(sparam == "RM_BtnPage") { g_dashPage = (g_dashPage == 1) ? 2 : 1; BuildDashboard(); ObjectSetInteger(0, sparam, OBJPROP_STATE, false); return; }
 
       // â”€â”€ Right panel tools â”€â”€
       if(sparam == "RM_BtnHide") { ToggleDashboardVisibility(); ObjectSetInteger(0, sparam, OBJPROP_STATE, false); return; }
