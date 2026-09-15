@@ -3,7 +3,7 @@
 //|                                  Copyright 2026, MetaQuotes Ltd. |
 //|                                             https://www.mql5.com |
 //+------------------------------------------------------------------+
-#define RM_VERSION "6.15"
+#define RM_VERSION "6.16"
 
 #property copyright "Copyright 2026, MetaQuotes Ltd."
 #property link      "https://www.mql5.com"
@@ -196,12 +196,14 @@ int    g_slPctIndex   = 1;
 int    g_rrIndex      = 1;
 
 double g_riskValues[] = {500, 1000, 1500, 0};
-double g_slPctValues[]= {0.25, 0.33, 0.50, 1.00};
+double g_slPctValues[]= {0.25, 0.33, 0.50, 1.00, 0};   // [0..3] presets (from inputs), [4] = custom %, entered on-chart
 double g_rrValues[]   = {1.0, 2.0, 3.0};
 
 // Custom risk entry
 bool   g_customRiskEditing = false;   // keyboard input mode active?
 string g_customRiskText    = "";      // digits entered so far
+bool   g_customSlEditing   = false;   // custom SL% keyboard input mode
+string g_customSlText      = "";      // SL% digits entered so far
 
 // Order split
 int    g_orderSplit         = 1;       // number of orders to split risk into (seeded from InpOrderSplit on init; keyboard can override live)
@@ -549,6 +551,7 @@ void ClearDashboardObjects()
 color GetBtnNormalColor(string name)
 {
    if(name == RiskBtnName(3)) return (g_riskIndex == 3) ? CLR_BTN_ON : CLR_BTN_OFF;
+   if(name == SlPctBtnName(4)) return (g_slPctIndex == 4) ? CLR_BTN_ON : CLR_BTN_OFF;
    for(int i = 0; i < 4; i++)
    {
       if(name == RiskBtnName(i))  return (i == g_riskIndex)  ? CLR_BTN_ON : CLR_BTN_OFF;
@@ -655,6 +658,7 @@ color GetBtnNormalColor(string name)
 color GetBtnHoverColor(string name)
 {
    if(name == RiskBtnName(3)) return (g_riskIndex == 3) ? CLR_BTN_ON_HOVER : CLR_BTN_OFF_HOVER;
+   if(name == SlPctBtnName(4)) return (g_slPctIndex == 4) ? CLR_BTN_ON_HOVER : CLR_BTN_OFF_HOVER;
    for(int i = 0; i < 4; i++)
    {
       if(name == RiskBtnName(i))  return (i == g_riskIndex)  ? CLR_BTN_ON_HOVER : CLR_BTN_OFF_HOVER;
@@ -1176,7 +1180,7 @@ void BuildDashboard()
    CreateBgRect("RM_SecSL", x + 4, cy - 3, panelW - 8, sectionH + 6, CLR_SECTION_BG, CLR_SECTION_BG);
    CreateLabel("RM_LblSL", cx + 2, cy + 2, "SL RANGE  (% Prev Daily Range)", CLR_TEXT_DIM, FONT_SIZE_LBL);
    cy += LABEL_H;
-   int slBtnW = (innerW - 3 * BTN_GAP) / 4;
+   int slBtnW = (innerW - 4 * BTN_GAP) / 5;
    for(int i = 0; i < 4; i++)
    {
       string pct = IntegerToString((int)MathRound(g_slPctValues[i] * 100));
@@ -1184,7 +1188,15 @@ void BuildDashboard()
                    pct + " %", CLR_BTN_OFF, CLR_TEXT);
       ObjectSetString(0, SlPctBtnName(i), OBJPROP_TOOLTIP, "SL = " + pct + "% of prev daily range");
    }
-   SetToggleGroup("RM_SlPct_", 4, g_slPctIndex, CLR_BTN_ON, CLR_BTN_OFF);
+   // 5th button: custom SL% entry, mirrors the custom risk button
+   string slCustomTxt = (g_slPctIndex == 4 && g_slPctValues[4] > 0)
+                        ? (IntegerToString((int)MathRound(g_slPctValues[4] * 100)) + " %")
+                        : "CUS";
+   CreateButton(SlPctBtnName(4), cx + 4 * (slBtnW + BTN_GAP), cy, slBtnW, BTN_H,
+                slCustomTxt, CLR_BTN_OFF, CLR_TEXT);
+   ObjectSetString(0, SlPctBtnName(4), OBJPROP_TOOLTIP,
+      "Custom SL % of prev daily range\nClick, type digits, Enter to confirm");
+   SetToggleGroup("RM_SlPct_", 5, g_slPctIndex, CLR_BTN_ON, CLR_BTN_OFF);
    cy += BTN_H + SECTION_GAP;
 
    // â•â•â•â•â•â•â•â•â•â•â• REWARD : RISK â•â•â•â•â•â•â•â•â•â•â•
@@ -9941,7 +9953,7 @@ bool DispatchRemote(string action, string button, string body, string &note)
       if(idx < 0 || idx > 3) { note = "index 0-3"; return false; }
       g_slPctIndex       = idx;
       g_slManualOverride = false;          // a preset overrides a manual drag
-      SetToggleGroup("RM_SlPct_", 4, g_slPctIndex, CLR_BTN_ON, CLR_BTN_OFF);
+      SetToggleGroup("RM_SlPct_", 5, g_slPctIndex, CLR_BTN_ON, CLR_BTN_OFF);
       if(g_linesActive) ReRenderLinesFromSettings();
       ChartRedraw(0);
       note = "SL " + DoubleToString(g_slPctValues[idx], 2) + "%";
@@ -10736,7 +10748,7 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
       return;
    }
 
-   if(id == CHARTEVENT_KEYDOWN && lparam == 13 && !g_customRiskEditing && !g_splitEditing)
+   if(id == CHARTEVENT_KEYDOWN && lparam == 13 && !g_customRiskEditing && !g_splitEditing && !g_customSlEditing)
    {
       if(g_setSLActive) { ApplySetSL(); return; }
       if(g_setTPActive) { ApplySetTP(); return; }
@@ -10744,10 +10756,10 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
    }
 
    // Esc - disarm. Conventional, and it was unbound.
-   if(id == CHARTEVENT_KEYDOWN && lparam == 27 && !g_customRiskEditing && !g_splitEditing)
+   if(id == CHARTEVENT_KEYDOWN && lparam == 27 && !g_customRiskEditing && !g_splitEditing && !g_customSlEditing)
    { DisarmSetup(); return; }
 
-   if(id == CHARTEVENT_KEYDOWN && lparam == 88 && !g_customRiskEditing && !g_splitEditing)
+   if(id == CHARTEVENT_KEYDOWN && lparam == 88 && !g_customRiskEditing && !g_splitEditing && !g_customSlEditing)
    { ToggleDashboardVisibility(); return; }
 
    // Split keyboard input (1-9) — only active in edit mode
@@ -10837,6 +10849,61 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
          ChartRedraw(0); return;
       }
       return;  // Consume all other keys while editing
+   }
+
+   // Custom SL% keyboard entry (mirrors custom risk)
+   if(id == CHARTEVENT_KEYDOWN && g_customSlEditing)
+   {
+      int key = (int)lparam;
+      int digit = -1;
+      if(key >= 48 && key <= 57)   digit = key - 48;
+      if(key >= 96 && key <= 105)  digit = key - 96;
+      if(digit >= 0)
+      {
+         if(StringLen(g_customSlText) < 3)   // up to 999%
+            g_customSlText += IntegerToString(digit);
+         ObjectSetString(0, SlPctBtnName(4), OBJPROP_TEXT, g_customSlText + "_");
+         ChartRedraw(0); return;
+      }
+      if(key == 8)   // backspace
+      {
+         int len = StringLen(g_customSlText);
+         if(len > 0) g_customSlText = StringSubstr(g_customSlText, 0, len - 1);
+         ObjectSetString(0, SlPctBtnName(4), OBJPROP_TEXT, g_customSlText + "_");
+         ChartRedraw(0); return;
+      }
+      if(key == 27)  // escape - cancel
+      {
+         g_customSlEditing = false;
+         g_customSlText    = "";
+         ObjectSetString(0, SlPctBtnName(4), OBJPROP_TEXT,
+            (g_slPctValues[4] > 0) ? (IntegerToString((int)MathRound(g_slPctValues[4] * 100)) + " %") : "CUS");
+         ObjectSetInteger(0, SlPctBtnName(4), OBJPROP_BGCOLOR, CLR_BTN_OFF);
+         ChartRedraw(0); return;
+      }
+      if(key == 13)  // enter - confirm
+      {
+         double pctv = StringToDouble(g_customSlText);
+         if(pctv > 0)
+         {
+            g_slPctValues[4]   = pctv / 100.0;
+            g_slPctIndex       = 4;
+            g_slManualOverride = false;
+            g_customSlEditing  = false;
+            ObjectSetString(0, SlPctBtnName(4), OBJPROP_TEXT, g_customSlText + " %");
+            SetToggleGroup("RM_SlPct_", 5, g_slPctIndex, CLR_BTN_ON, CLR_BTN_OFF);
+            if(g_linesActive) ReRenderLinesFromSettings();
+         }
+         else
+         {
+            g_customSlEditing = false;
+            g_customSlText    = "";
+            ObjectSetString(0, SlPctBtnName(4), OBJPROP_TEXT, "CUS");
+            ObjectSetInteger(0, SlPctBtnName(4), OBJPROP_BGCOLOR, CLR_BTN_OFF);
+         }
+         ChartRedraw(0); return;
+      }
+      return;  // consume other keys while editing
    }
 
    // Smart TP hotkeys: Ctrl+Shift+Up/Down=SL, Ctrl+Up/Down=green, Shift+Up/Down=beige (today only)
@@ -10930,7 +10997,13 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
          {
             g_slPctIndex = i;
             g_slManualOverride = false;
-            SetToggleGroup("RM_SlPct_", 4, g_slPctIndex, CLR_BTN_ON, CLR_BTN_OFF);
+            if(g_customSlEditing)
+            {
+               g_customSlEditing = false;
+               ObjectSetString(0, SlPctBtnName(4), OBJPROP_TEXT,
+                  (g_slPctValues[4] > 0) ? (IntegerToString((int)MathRound(g_slPctValues[4] * 100)) + " %") : "CUS");
+            }
+            SetToggleGroup("RM_SlPct_", 5, g_slPctIndex, CLR_BTN_ON, CLR_BTN_OFF);
             if(g_linesActive) ReRenderLinesFromSettings();
             ChartRedraw(0); return;
          }
@@ -10948,8 +11021,42 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
       {
          g_slPctIndex = 3;
          g_slManualOverride = false;
-         SetToggleGroup("RM_SlPct_", 4, g_slPctIndex, CLR_BTN_ON, CLR_BTN_OFF);
+         g_customSlEditing = false;
+         SetToggleGroup("RM_SlPct_", 5, g_slPctIndex, CLR_BTN_ON, CLR_BTN_OFF);
          if(g_linesActive) ReRenderLinesFromSettings();
+         ChartRedraw(0); return;
+      }
+
+      // Custom SL% button (mirrors the custom risk button)
+      if(sparam == SlPctBtnName(4))
+      {
+         ObjectSetInteger(0, sparam, OBJPROP_STATE, false);
+         if(!g_customSlEditing)
+         {
+            g_customSlEditing = true;
+            g_customSlText    = "";
+            ObjectSetString(0, SlPctBtnName(4), OBJPROP_TEXT, "_ %");
+            ObjectSetInteger(0, SlPctBtnName(4), OBJPROP_BGCOLOR, C'80,80,30');
+            ChartRedraw(0); return;
+         }
+         double pctv = StringToDouble(g_customSlText);
+         if(pctv > 0)
+         {
+            g_slPctValues[4]   = pctv / 100.0;
+            g_slPctIndex       = 4;
+            g_slManualOverride = false;
+            g_customSlEditing  = false;
+            ObjectSetString(0, SlPctBtnName(4), OBJPROP_TEXT, g_customSlText + " %");
+            SetToggleGroup("RM_SlPct_", 5, g_slPctIndex, CLR_BTN_ON, CLR_BTN_OFF);
+            if(g_linesActive) ReRenderLinesFromSettings();
+         }
+         else
+         {
+            g_customSlEditing = false;
+            g_customSlText    = "";
+            ObjectSetString(0, SlPctBtnName(4), OBJPROP_TEXT, "CUS");
+            ObjectSetInteger(0, SlPctBtnName(4), OBJPROP_BGCOLOR, CLR_BTN_OFF);
+         }
          ChartRedraw(0); return;
       }
 
