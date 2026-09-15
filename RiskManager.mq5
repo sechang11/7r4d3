@@ -45,9 +45,25 @@ input bool   InpAllowRemoteExec = false;// Allow the web app to EXECUTE an armed
 // set is never exceeded. The lots stay identical within a split, which is
 // what rapid-firing one size by hand actually looks like.
 input int    InpRiskJitterPct = 5;   // Jitter risk down by up to N% per setup (0 = off)
+input int    InpOrderSplit    = 1;   // Default order split (legs per entry) - set differently per instance
 input int    InpStaggerMinMs  = 200; // Min gap between split legs (0 = all at once)
 input int    InpStaggerMaxMs  = 2000;// Max gap between split legs
 input int    InpCmdPollSec   = 2;    // Seconds between command polls (when remote allowed)
+
+//--- Per-deployment risk presets -------------------------------------
+// Each trader sets their own quick-size tiers and SL presets, so independent
+// users aren't forced onto one identical size/SL fingerprint. These seed the
+// on-panel buttons at init; the button labels follow whatever you set here.
+input double InpRisk1  = 500;   // Quick-size tier 1 ($ risk)
+input double InpRisk2  = 1000;  // Quick-size tier 2 ($ risk)
+input double InpRisk3  = 1500;  // Quick-size tier 3 ($ risk)
+input double InpSLPct1 = 25;    // SL preset 1 (% of prev daily range)
+input double InpSLPct2 = 33;    // SL preset 2 (% of prev daily range)
+input double InpSLPct3 = 50;    // SL preset 3 (% of prev daily range)
+input double InpSLPct4 = 100;   // SL preset 4 (% of prev daily range)
+input double InpRR1    = 1.0;   // Reward:risk preset 1
+input double InpRR2    = 2.0;   // Reward:risk preset 2
+input double InpRR3    = 3.0;   // Reward:risk preset 3
 
 //--- Game-plan enforcement -------------------------------------------
 // The plan is written in the web app before the session; the EA pulls it
@@ -182,7 +198,7 @@ bool   g_customRiskEditing = false;   // keyboard input mode active?
 string g_customRiskText    = "";      // digits entered so far
 
 // Order split
-int    g_orderSplit         = 1;       // number of orders to split risk into
+int    g_orderSplit         = 1;       // number of orders to split risk into (seeded from InpOrderSplit on init; keyboard can override live)
 bool   g_splitEditing       = false;   // keyboard input mode for split
 string g_splitText          = "";      // digits entered so far
 
@@ -862,10 +878,9 @@ void BuildDashboard()
    CreateLabel("RM_LblRisk", cx + 2, cy + 2, "RISK AMOUNT", CLR_TEXT_DIM, FONT_SIZE_LBL);
    cy += LABEL_H;
    int riskBtnW = (innerW - 4 * BTN_GAP) / 5;
-   string riskLabels[] = {"$500", "$1,000", "$1,500"};
    for(int i = 0; i < 3; i++)
       CreateButton(RiskBtnName(i), cx + i * (riskBtnW + BTN_GAP), cy, riskBtnW, BTN_H,
-                   riskLabels[i], CLR_BTN_OFF, CLR_TEXT);
+                   "$" + IntegerToString((int)g_riskValues[i]), CLR_BTN_OFF, CLR_TEXT);
    // 4th button: custom risk entry
    string customTxt = (g_riskIndex == 3 && g_riskValues[3] > 0)
                       ? ("$" + IntegerToString((int)g_riskValues[3]))
@@ -1107,15 +1122,14 @@ void BuildDashboard()
    CreateLabel("RM_LblSL", cx + 2, cy + 2, "SL RANGE  (% Prev Daily Range)", CLR_TEXT_DIM, FONT_SIZE_LBL);
    cy += LABEL_H;
    int slBtnW = (innerW - 3 * BTN_GAP) / 4;
-   string slLabels[] = {"25 %", "33 %", "50 %", "100 %"};
    for(int i = 0; i < 4; i++)
+   {
+      string pct = IntegerToString((int)MathRound(g_slPctValues[i] * 100));
       CreateButton(SlPctBtnName(i), cx + i * (slBtnW + BTN_GAP), cy, slBtnW, BTN_H,
-                   slLabels[i], CLR_BTN_OFF, CLR_TEXT);
+                   pct + " %", CLR_BTN_OFF, CLR_TEXT);
+      ObjectSetString(0, SlPctBtnName(i), OBJPROP_TOOLTIP, "SL = " + pct + "% of prev daily range");
+   }
    SetToggleGroup("RM_SlPct_", 4, g_slPctIndex, CLR_BTN_ON, CLR_BTN_OFF);
-   ObjectSetString(0, SlPctBtnName(0), OBJPROP_TOOLTIP, "SL = 25% of prev daily range");
-   ObjectSetString(0, SlPctBtnName(1), OBJPROP_TOOLTIP, "SL = 33% of prev daily range");
-   ObjectSetString(0, SlPctBtnName(2), OBJPROP_TOOLTIP, "SL = 50% of prev daily range");
-   ObjectSetString(0, SlPctBtnName(3), OBJPROP_TOOLTIP, "SL = 100% of prev daily range");
    cy += BTN_H + SECTION_GAP;
 
    // â•â•â•â•â•â•â•â•â•â•â• REWARD : RISK â•â•â•â•â•â•â•â•â•â•â•
@@ -8326,6 +8340,10 @@ void RerunArmedOrder()
    if(g_lastOrderBtn == "")     return;
    if(!g_linesActive)           return;
    if(g_slManualOverride)       return;
+   // Only market orders track price. A limit/stop entry is a price the user
+   // chose - once armed, its lines stay put and stay draggable instead of
+   // being snapped back to the recipe every few seconds.
+   if(!g_isMarketOrder)         return;
 
    int      curBars = iBars(_Symbol, PERIOD_M15);
    datetime curTime = TimeCurrent();
@@ -10386,6 +10404,19 @@ int OnInit()
 {
    SetChartTheme();
    UpdateUiScale();          // before BuildDashboard - every size depends on it
+
+   // Seed the live split from the input so it survives re-init (recompile,
+   // timeframe change, terminal restart) - and so two instances can run
+   // different split counts. The keyboard SPLIT button still overrides live.
+   g_orderSplit = MathMax(InpOrderSplit, 1);
+
+   // Seed the quick-size / SL / RR presets from inputs (before BuildDashboard,
+   // so the button labels reflect them). Slot [3] of the risk array stays 0 =
+   // the CUSTOM button.
+   g_riskValues[0]  = InpRisk1;  g_riskValues[1] = InpRisk2;  g_riskValues[2] = InpRisk3;
+   g_slPctValues[0] = InpSLPct1 / 100.0; g_slPctValues[1] = InpSLPct2 / 100.0;
+   g_slPctValues[2] = InpSLPct3 / 100.0; g_slPctValues[3] = InpSLPct4 / 100.0;
+   g_rrValues[0]    = InpRR1;    g_rrValues[1] = InpRR2;    g_rrValues[2] = InpRR3;
 
    // Off by default. The Experts log is a local file the broker cannot read,
    // but a distinctive version string is still a correlation handle if logs
