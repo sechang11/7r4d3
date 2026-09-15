@@ -3,7 +3,7 @@
 //|                                  Copyright 2026, MetaQuotes Ltd. |
 //|                                             https://www.mql5.com |
 //+------------------------------------------------------------------+
-#define RM_VERSION "6.14"
+#define RM_VERSION "6.15"
 
 #property copyright "Copyright 2026, MetaQuotes Ltd."
 #property link      "https://www.mql5.com"
@@ -135,7 +135,7 @@ void UpdateUiScale()
 
 //--- Dashboard layout constants (design px, scaled at every use)
 #define PANEL_X         UI(30)
-#define PANEL_Y         UI(30)
+#define PANEL_Y         UI(66)   // leaves a clear row above the panel for the PAGE + hide buttons
 #define BTN_W           UI(180)
 #define BTN_H           UI(46)
 #define BTN_GAP         UI(8)
@@ -382,7 +382,7 @@ bool     g_tt_lastContBosIsHigh  = false; // true = up-BOS (broke swing high)
 #define H4_LOOKBACK 1560   // ~3 months of H1 bars  (13wk * 5d * 24 bars/day)
 
 // â"€â"€ H4 Thrust (runs on H1 bars, 4-bar window â†' captures H4 swings) â"€â"€
-bool     g_h4_active       = true;
+bool     g_h4_active       = false;   // H4 thrust lines off by default; ToggleH4Thrust computes on demand
 int      g_h4_tFlow        = 1;    // 1=up, 2=down
 int      g_h4_tTrend       = 1;    // 1=bullish, 2=bearish
 double   g_h4_swingHigh    = 0;
