@@ -1029,7 +1029,11 @@ mcolor2 = color.new(#9575cd,42)
 // stayed 0. syminfo.type=="futures" is added ONLY here, not to _is_lagged_feed,
 // so PrevD1Offset / the D1 plots are untouched. Mirrors the band-aid, whose
 // true_friday ternary omits "futures" and so falls through to Thursday.
-var _is_24h_broker = syminfo.prefix == "FOREXCOM" or syminfo.prefix == "OANDA" or _is_lagged_feed or syminfo.type == "futures"
+// USOIL and other ~24h TVC commodity CFDs also stamp the daily bar a day early
+// (the Fri session opens Thursday evening) but are neither FX nor futures, so
+// add them by ticker. Same fix as DXY/MNQ; append siblings (UKOIL, XAUUSD, ...)
+// to the ticker list as they come up.
+var _is_24h_broker = syminfo.prefix == "FOREXCOM" or syminfo.prefix == "OANDA" or _is_lagged_feed or syminfo.type == "futures" or syminfo.ticker == "USOIL"
 
 var fricount = 0
 var MxM = 0.0
