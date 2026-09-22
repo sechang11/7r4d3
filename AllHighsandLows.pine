@@ -1130,6 +1130,11 @@ if newYear
 
 plot(yearo, title="Year Open", style=plot.style_cross, color=color.new(#6f6601, 42), linewidth=1)
 
+// Annual (12-month) high / low — faint, break-on-gap line. Reuses the M12
+// request.security values already computed above.
+plot(M12High, title="Year High", style=plot.style_linebr, color=color.new(#6f6601, 78), linewidth=1)
+plot(M12Low,  title="Year Low",  style=plot.style_linebr, color=color.new(#6f6601, 78), linewidth=1)
+
 
 // // Tracks current potential BPR
 // var dnBPRhi = 111.0
