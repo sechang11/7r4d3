@@ -30,6 +30,9 @@ import pandas as pd
 import MetaTrader5 as mt5
 
 # ─── Config ──────────────────────────────────────────────────────────────────
+# Point this at the exact terminal you're logged into (helps with -6 auth
+# errors and picks the right one when several MT5s are installed). "" = auto.
+MT5_PATH  = r""   # e.g. r"C:\Program Files\OANDA MetaTrader 5\terminal64.exe"
 SYMBOLS   = ["XAUUSD", "US30.cash", "NAS100.cash", "USOIL.cash"]  # <- your names
 TIMEFRAME = mt5.TIMEFRAME_M15   # M15 window == the H1 thrust
 N_BARS    = 60000               # bars to pull per symbol (as far back as MT5 has)
@@ -241,8 +244,22 @@ def make_plots(ev_df):
 
 # ─── Main ────────────────────────────────────────────────────────────────────
 def main():
-    if not mt5.initialize():
-        print("initialize() failed:", mt5.last_error()); return
+    ok = mt5.initialize(path=MT5_PATH) if MT5_PATH else mt5.initialize()
+    if not ok:
+        err = mt5.last_error()
+        print("initialize() failed:", err)
+        if err and err[0] == -6:
+            print("  -6 Authorization failed - usually one of:\n"
+                  "   1. ELEVATION MISMATCH (most common): run this script at the SAME\n"
+                  "      Windows privilege as the terminal - either both normal, or both\n"
+                  "      'Run as administrator'. A terminal opened as admin won't talk to a\n"
+                  "      normal Python (and vice-versa).\n"
+                  "   2. Set MT5_PATH to the exact terminal64.exe you're logged into.\n"
+                  "   3. That terminal must be open and logged in to your account.")
+        return
+    ti = mt5.terminal_info()
+    if ti is not None:
+        print(f"connected: {ti.name}  logged_in={ti.connected}  path={ti.path}")
 
     all_events = []
     for sym in SYMBOLS:
