@@ -331,12 +331,6 @@ show_h1 = timeframe.period == '1' or timeframe.period == '5'   // add other sub-
 // are indigo so they're easy to spot; raise the transparency numbers to taste.
 h1_pHi = plot(show_h1 ? h1SwingHigh : na, "H1 Swing High", color.new(#4B0082, 20), 2, plot.style_linebr)
 h1_pLo = plot(show_h1 ? h1SwingLow  : na, "H1 Swing Low",  color.new(#4B0082, 20), 2, plot.style_linebr)
+// Fill is tinted by H1 trend (green up / maroon down), so it doubles as the
+// trend read-out - the per-candle circles were removed as too distracting.
 fill(h1_pHi, h1_pLo, h1Trend == 1 ? color.new(color.green, 82) : color.new(color.maroon, 82), "H1 Fair Value")
-
-// Trend circles: downtrend -> a small, faint circle set well ABOVE each candle;
-// uptrend -> well BELOW. Distance scales with ATR - raise the 1.5 to push them
-// further out, raise the transparency (65) to fade them more, or the linewidth
-// (1) to enlarge them.
-h1_circOff = ta.atr(14) * 1.5
-plot(show_h1 and h1Trend == 2 ? high + h1_circOff : na, "H1 Downtrend", color.new(color.maroon, 65), 1, plot.style_circles)
-plot(show_h1 and h1Trend == 1 ? low  - h1_circOff : na, "H1 Uptrend",   color.new(color.green, 65), 1, plot.style_circles)
