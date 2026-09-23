@@ -323,15 +323,15 @@ f_h1_thrust() =>
 
 [h1SwingHigh, h1SwingLow, h1Trend] = request.security(syminfo.tickerid, '60', f_h1_thrust())
 
-show_h1 = timeframe.period == '5'   // broaden here (e.g. or timeframe.period=='1') for other sub-H1 charts
+show_h1 = timeframe.period == '1' or timeframe.period == '5'   // add other sub-H1 periods here
 
-// Fair-value zone: transparent fill between the H1 swing high and low. Tinted
-// by H1 trend (green up / maroon down); price inside the fill = fair value.
-h1_pHi = plot(show_h1 ? h1SwingHigh : na, "H1 Swing High", color.new(color.gray, 50), 1, plot.style_linebr)
-h1_pLo = plot(show_h1 ? h1SwingLow  : na, "H1 Swing Low",  color.new(color.gray, 50), 1, plot.style_linebr)
-fill(h1_pHi, h1_pLo, h1Trend == 1 ? color.new(color.green, 90) : color.new(color.maroon, 90), "H1 Fair Value")
+// Fair-value zone: fill between the H1 swing high and low, tinted by H1 trend
+// (green up / maroon down). Price inside the fill = fair value. The swing lines
+// are indigo so they're easy to spot; raise the transparency numbers to taste.
+h1_pHi = plot(show_h1 ? h1SwingHigh : na, "H1 Swing High", color.new(#4B0082, 20), 2, plot.style_linebr)
+h1_pLo = plot(show_h1 ? h1SwingLow  : na, "H1 Swing Low",  color.new(#4B0082, 20), 2, plot.style_linebr)
+fill(h1_pHi, h1_pLo, h1Trend == 1 ? color.new(color.green, 82) : color.new(color.maroon, 82), "H1 Fair Value")
 
-// Trend circles: H1 downtrend -> a faint circle above each M5 candle, H1
-// uptrend -> below.
-plotshape(show_h1 and h1Trend == 2, "H1 Downtrend", shape.circle, location.abovebar, color.new(color.maroon, 60), size=size.tiny)
-plotshape(show_h1 and h1Trend == 1, "H1 Uptrend",   shape.circle, location.belowbar, color.new(color.green, 60), size=size.tiny)
+// Trend circles: H1 downtrend -> circle above each candle, H1 uptrend -> below.
+plotshape(show_h1 and h1Trend == 2, "H1 Downtrend", shape.circle, location.abovebar, color.new(color.maroon, 30), size=size.tiny)
+plotshape(show_h1 and h1Trend == 1, "H1 Uptrend",   shape.circle, location.belowbar, color.new(color.green, 30), size=size.tiny)
