@@ -269,3 +269,69 @@ if (timeframe.period == '15' or timeframe.period == '60') and barstate.islast
     if tmtx_range > 0
         tmtx_topLine := line.new(bar_index, swingHigh, bar_index + 3, swingHigh, color=color.black, style=line.style_solid, width=4)
         tmtx_botLine := line.new(bar_index, swingLow, bar_index + 3, swingLow, color=color.black, style=line.style_solid, width=4)
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// H1 thrust structure projected onto the M5 chart
+// ═══════════════════════════════════════════════════════════════════════════
+// Everything above computes the structure on the CHART's own timeframe (15/60).
+// To see the H1 structure on a 5-minute chart, the same swing/trend state is
+// wrapped in a function and pulled from the H1 timeframe via request.security,
+// then painted here: a transparent fair-value fill between the H1 swing high and
+// low, plus per-candle trend circles (above in an H1 downtrend, below in an H1
+// uptrend). Gated to the 5-minute chart so it doesn't double up on H1/15m.
+
+f_h1_thrust() =>
+    var float hHold = na
+    var float lHold = na
+    var float sHigh = na
+    var float sLow  = na
+    var int   trnd  = 1
+    var int   flw   = 1
+    var bool  ckUp  = false
+    var bool  ckDn  = false
+    isLP = low[0] <= low[1] and low[0] <= low[2] and low[0] <= low[3] and low[0] <= low[4]
+    isHP = high[0] >= high[1] and high[0] >= high[2] and high[0] >= high[3] and high[0] >= high[4]
+    hh4 = ta.highest(high, 4)[1]
+    ll4 = ta.lowest(low, 4)[1]
+    if isLP
+        lHold := low
+    if isHP
+        hHold := high
+    // Down / up thrust — mirrors the chart-TF logic, including the repeated
+    // down-thrust check that lets flow flip twice within one bar.
+    if flw == 1 and low < ll4
+        sHigh := hHold
+        flw := 2
+        ckUp := true
+    if flw == 2 and high > hh4
+        sLow := lHold
+        flw := 1
+        ckDn := true
+    if flw == 1 and low < ll4
+        sHigh := hHold
+        flw := 2
+        ckUp := true
+    // BOS — trend flips when price breaks the pending swing.
+    if ckUp and high > sHigh
+        ckUp := false
+        trnd := 1
+    if ckDn and low < sLow
+        ckDn := false
+        trnd := 2
+    [sHigh, sLow, trnd]
+
+[h1SwingHigh, h1SwingLow, h1Trend] = request.security(syminfo.tickerid, '60', f_h1_thrust())
+
+show_h1 = timeframe.period == '5'   // broaden here (e.g. or timeframe.period=='1') for other sub-H1 charts
+
+// Fair-value zone: transparent fill between the H1 swing high and low. Tinted
+// by H1 trend (green up / maroon down); price inside the fill = fair value.
+h1_pHi = plot(show_h1 ? h1SwingHigh : na, "H1 Swing High", color.new(color.gray, 50), 1, plot.style_linebr)
+h1_pLo = plot(show_h1 ? h1SwingLow  : na, "H1 Swing Low",  color.new(color.gray, 50), 1, plot.style_linebr)
+fill(h1_pHi, h1_pLo, h1Trend == 1 ? color.new(color.green, 90) : color.new(color.maroon, 90), "H1 Fair Value")
+
+// Trend circles: H1 downtrend -> a faint circle above each M5 candle, H1
+// uptrend -> below.
+plotshape(show_h1 and h1Trend == 2, "H1 Downtrend", shape.circle, location.abovebar, color.new(color.maroon, 60), size=size.tiny)
+plotshape(show_h1 and h1Trend == 1, "H1 Uptrend",   shape.circle, location.belowbar, color.new(color.green, 60), size=size.tiny)
