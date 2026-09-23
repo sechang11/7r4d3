@@ -46,7 +46,7 @@ if isHighPivot()
 
 // --- Thrust Logic ---
 // Down Thrust
-if timeframe.period=='15' or timeframe.period=='60'
+if timeframe.period=='15'   // H1 thrust (4x M15). H4 thrust (4x H1) on the H1 chart is hidden - not used.
     if tFlow == 1
         if low < lowestLowof4
             swingHigh := highPriceholder
@@ -236,7 +236,7 @@ var label tmtx_label = na
 var line  tmtx_topLine = na
 var line  tmtx_botLine = na
 
-if (timeframe.period == '15' or timeframe.period == '60') and barstate.islast
+if timeframe.period == '15' and barstate.islast
     tmtx_range = swingHigh - swingLow
     tmtx_pct   = tmtx_range > 0 ? (close - swingLow) / tmtx_range * 100.0 : na
     tmtx_level = not na(tmtx_pct) ? math.round(tmtx_pct) : na
@@ -274,12 +274,13 @@ if (timeframe.period == '15' or timeframe.period == '60') and barstate.islast
 // ═══════════════════════════════════════════════════════════════════════════
 // H1 thrust structure projected onto the M5 chart
 // ═══════════════════════════════════════════════════════════════════════════
-// Everything above computes the structure on the CHART's own timeframe (15/60).
-// To see the H1 structure on a 5-minute chart, the same swing/trend state is
-// wrapped in a function and pulled from the H1 timeframe via request.security,
+// The block above computes the structure on the CHART's own timeframe. The
+// thrust uses a 4-bar window, so on M15 that window is 4x M15 = the H1 thrust
+// (on H1 it would be 4x H1 = the H4 thrust, which we hide).
+// To see the H1 thrust on a 1- or 5-minute chart, the same swing/trend state is
+// wrapped in a function and pulled from the M15 timeframe via request.security,
 // then painted here: a transparent fair-value fill between the H1 swing high and
-// low, plus per-candle trend circles (above in an H1 downtrend, below in an H1
-// uptrend). Gated to the 5-minute chart so it doesn't double up on H1/15m.
+// low, plus trend circles (above in a downtrend, below in an uptrend).
 
 f_h1_thrust() =>
     var float hHold = na
@@ -321,7 +322,7 @@ f_h1_thrust() =>
         trnd := 2
     [sHigh, sLow, trnd]
 
-[h1SwingHigh, h1SwingLow, h1Trend] = request.security(syminfo.tickerid, '60', f_h1_thrust())
+[h1SwingHigh, h1SwingLow, h1Trend] = request.security(syminfo.tickerid, '15', f_h1_thrust())
 
 show_h1 = timeframe.period == '1' or timeframe.period == '5'   // add other sub-H1 periods here
 
@@ -332,6 +333,10 @@ h1_pHi = plot(show_h1 ? h1SwingHigh : na, "H1 Swing High", color.new(#4B0082, 20
 h1_pLo = plot(show_h1 ? h1SwingLow  : na, "H1 Swing Low",  color.new(#4B0082, 20), 2, plot.style_linebr)
 fill(h1_pHi, h1_pLo, h1Trend == 1 ? color.new(color.green, 82) : color.new(color.maroon, 82), "H1 Fair Value")
 
-// Trend circles: H1 downtrend -> circle above each candle, H1 uptrend -> below.
-plotshape(show_h1 and h1Trend == 2, "H1 Downtrend", shape.circle, location.abovebar, color.new(color.maroon, 30), size=size.tiny)
-plotshape(show_h1 and h1Trend == 1, "H1 Uptrend",   shape.circle, location.belowbar, color.new(color.green, 30), size=size.tiny)
+// Trend circles: downtrend -> a small, faint circle set well ABOVE each candle;
+// uptrend -> well BELOW. Distance scales with ATR - raise the 1.5 to push them
+// further out, raise the transparency (65) to fade them more, or the linewidth
+// (1) to enlarge them.
+h1_circOff = ta.atr(14) * 1.5
+plot(show_h1 and h1Trend == 2 ? high + h1_circOff : na, "H1 Downtrend", color.new(color.maroon, 65), 1, plot.style_circles)
+plot(show_h1 and h1Trend == 1 ? low  - h1_circOff : na, "H1 Uptrend",   color.new(color.green, 65), 1, plot.style_circles)
