@@ -191,6 +191,31 @@ if timeframe.period=='15'   // H1 thrust (4x M15). H4 thrust (4x H1) on the H1 c
     else
         line.delete(vsTrend_line)
 
+    // ── Right-edge labels: name each extend-right line. Lines can't carry a
+    //    tooltip, so a small tagged label sits at the right end of each; hover
+    //    the label for the fuller description. ───────────────────────────────
+    var label lblFlow  = na
+    var label lblSHigh = na
+    var label lblSLow  = na
+    var label lblVs    = na
+    if barstate.islast
+        lx    = bar_index + 3
+        flowY = tFlow == 1 ? lowestLowof4 : highestHighof4
+        if not na(lblFlow)
+            label.delete(lblFlow)
+        lblFlow := label.new(lx, flowY, "Flow", xloc.bar_index, yloc.price, color(na), label.style_none, color.rgb(13, 54, 59), size.small, tooltip="Flow line: trailing 4-bar extreme that sets the current flow direction")
+        if not na(lblSHigh)
+            label.delete(lblSHigh)
+        lblSHigh := label.new(lx, swingHigh, "Swing High", xloc.bar_index, yloc.price, color(na), label.style_none, tTrend == 1 ? color.green : color.maroon, size.small, tooltip="Last swing high (thrust). A break above it is a bullish BOS")
+        if not na(lblSLow)
+            label.delete(lblSLow)
+        lblSLow := label.new(lx, swingLow, "Swing Low", xloc.bar_index, yloc.price, color(na), label.style_none, tTrend == 1 ? color.green : color.maroon, size.small, tooltip="Last swing low (thrust). A break below it is a bearish BOS")
+        if not na(lblVs)
+            label.delete(lblVs)
+            lblVs := na
+        if not na(vsTrend_line) and not na(sl_level)
+            lblVs := label.new(lx, sl_level, "VS", xloc.bar_index, yloc.price, color(na), label.style_none, color.red, size.small, tooltip="VS target: 1:1 measured move projected once price breaks the swing")
+
 
     // --- CHoCH Logic ---
     // Down CHoCH/
