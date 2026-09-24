@@ -67,7 +67,11 @@ const SUBS_FILE = path.join(DATA_DIR, 'push-subs.json');
 // append-only command journal above - this one is edited.
 const JRNL_DIR    = path.join(DATA_DIR, 'journal');
 const SCHEMA_FILE = path.join(DATA_DIR, 'journal-schema.json');
+// Study results pushed up from the local Python analysis - the server only
+// stores and serves them; it never computes.
+const STUDIES_DIR = path.join(DATA_DIR, 'studies');
 fs.mkdirSync(JRNL_DIR, { recursive: true });
+fs.mkdirSync(STUDIES_DIR, { recursive: true });
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
 // Web push: one VAPID keypair for this deployment, and the browser push
@@ -783,6 +787,50 @@ const server = http.createServer(async (req, res) => {
       fs.writeFileSync(PLAN_FILE, JSON.stringify(plan, null, 2));
       appendJournal({ type: 'plan_saved', plan });
       return send(res, 200, { ok: true });
+    }
+
+    // ── Studies: results pushed up from the local Python analysis. The server
+    //    only stores and serves them - all computation happens locally. ──
+    if (p === '/api/studies' && req.method === 'GET') {
+      const list = [];
+      try {
+        for (const f of fs.readdirSync(STUDIES_DIR)) {
+          if (!f.endsWith('.json')) continue;
+          try {
+            const s = JSON.parse(fs.readFileSync(path.join(STUDIES_DIR, f), 'utf8'));
+            list.push({ id: f.replace(/\.json$/, ''), name: s.name ?? f,
+                        created: s.created ?? null,
+                        symbols: s.config?.symbols ?? [],
+                        events: s.pooled?.events ?? null });
+          } catch { /* skip unreadable */ }
+        }
+      } catch { /* none yet */ }
+      list.sort((a, b) => String(b.created).localeCompare(String(a.created)));
+      return send(res, 200, { studies: list });
+    }
+
+    if (p === '/api/studies' && req.method === 'POST') {
+      const body = JSON.parse(await readBody(req, 16_000_000));
+      const safe = String(body.name ?? 'study').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40) || 'study';
+      const id = `${safe}-${Date.now()}`;
+      body.created = body.created ?? new Date().toISOString();
+      fs.writeFileSync(path.join(STUDIES_DIR, `${id}.json`), JSON.stringify(body));
+      try {   // keep the newest 30 by mtime, bound the volume
+        const files = fs.readdirSync(STUDIES_DIR).filter(f => f.endsWith('.json'))
+          .map(f => ({ f, t: fs.statSync(path.join(STUDIES_DIR, f)).mtimeMs }))
+          .sort((a, b) => a.t - b.t);
+        for (const { f } of files.slice(0, -30)) fs.unlinkSync(path.join(STUDIES_DIR, f));
+      } catch { /* best effort */ }
+      return send(res, 200, { ok: true, id });
+    }
+
+    if (p.startsWith('/api/studies/') && req.method === 'GET') {
+      const id = p.slice('/api/studies/'.length).replace(/[^A-Za-z0-9_-]/g, '');
+      try {
+        const buf = fs.readFileSync(path.join(STUDIES_DIR, `${id}.json`), 'utf8');
+        res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+        return res.end(buf);
+      } catch { return send(res, 404, { error: 'not found' }); }
     }
 
     if (req.method === 'GET') return serveStatic(res, p);

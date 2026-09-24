@@ -25,6 +25,11 @@ Setup:
   Run:  python thrust_excursion_study.py
 """
 
+import os
+import sys
+import json
+import base64
+import urllib.request
 import numpy as np
 import pandas as pd
 import MetaTrader5 as mt5
@@ -42,6 +47,14 @@ DROP_INCOMPLETE = True          # NaN out rules whose stop didn't trigger before
 OUT_CSV   = "thrust_events.csv"
 PLOTS     = True                # save R-distribution histograms if matplotlib is present
 TARGETS   = [0.5, 1.0, 1.5, 2.0, 3.0]   # R levels for the hit-rate table
+
+# Local bar cache so re-runs (and offline analysis tweaks) don't re-hit MT5.
+CACHE_DIR = os.path.join(os.path.dirname(__file__), "bars_cache")
+REFRESH   = False               # True = ignore cache and re-pull everything from MT5
+
+# `--push` sends the RESULTS (not the raw bars) to the 7r4d3 bridge Studies page.
+BRIDGE_URL = os.environ.get("RM_BRIDGE", "https://7r4d3.net")
+TOKEN      = os.environ.get("RM_TOKEN", "")   # bridge token; keep it out of the file
 
 
 # ─── Thrust structure — mirrors the Pine logic. Lagging pivots => no lookahead ─
@@ -220,12 +233,13 @@ def make_plots(ev_df):
         import matplotlib
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
+        from io import BytesIO
     except Exception:
         print("\n(matplotlib not installed — skipping histograms)")
-        return
+        return None
     rb = ev_df["R_b"].dropna()
     if len(rb) == 0:
-        return
+        return None
     fig, ax = plt.subplots(1, 2, figsize=(12, 4))
     ax[0].hist(rb.clip(upper=6), bins=40, color="#4B0082", alpha=0.8)
     ax[0].axvline(1, color="green", ls="--", label="VS (1R)")
@@ -239,37 +253,114 @@ def make_plots(ev_df):
         ax[1].set_title("R by H4 agreement"); ax[1].set_xlabel("R"); ax[1].legend()
     fig.tight_layout()
     fig.savefig("thrust_R_hist.png", dpi=110)
+    buf = BytesIO(); fig.savefig(buf, format="png", dpi=110); plt.close(fig)
     print("\nHistograms saved to thrust_R_hist.png")
+    return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
+
+
+# ─── Structured result for the 7r4d3 Studies page (mirrors the printed report) ─
+def _stat(series):
+    s = pd.Series(series).dropna()
+    if len(s) == 0:
+        return None
+    return dict(n=int(len(s)), mean=round(float(s.mean()), 3), median=round(float(s.median()), 3),
+                p90=round(float(s.quantile(.9)), 3), hit1=round(float((s >= 1).mean()), 3),
+                hit2=round(float((s >= 2).mean()), 3), max=round(float(s.max()), 3))
+
+
+def build_block(ev_df):
+    byDir = {}
+    for d in ("all", "up", "down"):
+        sub = ev_df if d == "all" else ev_df[ev_df["dir"] == d]
+        byDir[d] = {"a": _stat(sub["R_a"]), "b": _stat(sub["R_b"]),
+                    "c": _stat(sub["R_c"]), "mae": _stat(sub["MAE_b"])}
+    vs = ev_df[ev_df["vs_outcome"].isin(["win", "loss"])]
+    vs_block = None
+    if len(vs):
+        wr = float((vs["vs_outcome"] == "win").mean())
+        vs_block = dict(n=int(len(vs)), win=round(wr, 3), expectancy=round(2 * wr - 1, 3),
+                        medBars=float(vs["vs_bars"].median()))
+    htf = None
+    if "htf_agree" in ev_df and ev_df["htf_agree"].notna().any():
+        vs_a = vs[vs["htf_agree"] == True]; vs_d = vs[vs["htf_agree"] == False]
+        htf = dict(agreeR=_stat(ev_df.loc[ev_df["htf_agree"] == True, "R_b"]),
+                   disagreeR=_stat(ev_df.loc[ev_df["htf_agree"] == False, "R_b"]),
+                   vsWinAgree=round(float((vs_a["vs_outcome"] == "win").mean()), 3) if len(vs_a) else None,
+                   vsWinDisagree=round(float((vs_d["vs_outcome"] == "win").mean()), 3) if len(vs_d) else None)
+    rb = ev_df["R_b"].dropna()
+    targets = {str(t): round(float((rb >= t).mean()), 3) for t in TARGETS} if len(rb) else None
+    byRange = None
+    if ev_df["rangeSize"].notna().sum() > 6:
+        q = ev_df["rangeSize"].quantile([.33, .66])
+        byRange = dict(
+            small=_stat(ev_df.loc[ev_df["rangeSize"] <= q.iloc[0], "R_b"]),
+            mid=_stat(ev_df.loc[(ev_df["rangeSize"] > q.iloc[0]) & (ev_df["rangeSize"] <= q.iloc[1]), "R_b"]),
+            large=_stat(ev_df.loc[ev_df["rangeSize"] > q.iloc[1], "R_b"]))
+    return dict(events=int(len(ev_df)), byDir=byDir, vs=vs_block, htf=htf,
+                targets=targets, byRange=byRange)
+
+
+def push_result(result):
+    if not TOKEN:
+        print("  --push skipped: set RM_TOKEN in the environment first"); return
+    data = json.dumps(result).encode()
+    req = urllib.request.Request(BRIDGE_URL.rstrip("/") + "/api/studies", data=data, method="POST",
+                                 headers={"Content-Type": "application/json",
+                                          "Authorization": "Bearer " + TOKEN})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            print(f"  pushed to {BRIDGE_URL} -> {r.read().decode()[:120]}")
+    except Exception as e:
+        print(f"  push failed: {e}")
+
+
+# ─── Bar loading (cache-first, so analysis tweaks don't re-hit MT5) ──────────
+def cache_path(sym):
+    return os.path.join(CACHE_DIR, sym.replace("/", "_").replace("\\", "_") + ".pkl")
+
+def load_or_pull(sym):
+    if os.path.exists(cache_path(sym)) and not REFRESH:
+        return pd.read_pickle(cache_path(sym)), True
+    rates = mt5.copy_rates_from_pos(sym, TIMEFRAME, 0, N_BARS)
+    if rates is None or len(rates) == 0:
+        return None, False
+    df = pd.DataFrame(rates)
+    df["time"] = pd.to_datetime(df["time"], unit="s")
+    os.makedirs(CACHE_DIR, exist_ok=True)
+    df.to_pickle(cache_path(sym))
+    return df, False
 
 
 # ─── Main ────────────────────────────────────────────────────────────────────
 def main():
-    ok = mt5.initialize(path=MT5_PATH) if MT5_PATH else mt5.initialize()
-    if not ok:
-        err = mt5.last_error()
-        print("initialize() failed:", err)
-        if err and err[0] == -6:
-            print("  -6 Authorization failed - usually one of:\n"
-                  "   1. ELEVATION MISMATCH (most common): run this script at the SAME\n"
-                  "      Windows privilege as the terminal - either both normal, or both\n"
-                  "      'Run as administrator'. A terminal opened as admin won't talk to a\n"
-                  "      normal Python (and vice-versa).\n"
-                  "   2. Set MT5_PATH to the exact terminal64.exe you're logged into.\n"
-                  "   3. That terminal must be open and logged in to your account.")
-        return
-    ti = mt5.terminal_info()
-    if ti is not None:
-        print(f"connected: {ti.name}  logged_in={ti.connected}  path={ti.path}")
+    push = "--push" in sys.argv
+    need_pull = REFRESH or any(not os.path.exists(cache_path(s)) for s in SYMBOLS)
 
-    all_events = []
+    if need_pull:
+        ok = mt5.initialize(path=MT5_PATH) if MT5_PATH else mt5.initialize()
+        if not ok:
+            err = mt5.last_error()
+            print("initialize() failed:", err)
+            if err and err[0] == -6:
+                print("  -6 Authorization failed - usually one of:\n"
+                      "   1. ELEVATION MISMATCH (most common): run this script at the SAME\n"
+                      "      Windows privilege as the terminal - either both normal, or both\n"
+                      "      'Run as administrator'. A terminal opened as admin won't talk to a\n"
+                      "      normal Python (and vice-versa).\n"
+                      "   2. Set MT5_PATH to the exact terminal64.exe you're logged into.\n"
+                      "   3. That terminal must be open and logged in to your account.")
+            return
+        ti = mt5.terminal_info()
+        if ti is not None:
+            print(f"connected: {ti.name}  logged_in={ti.connected}  path={ti.path}")
+        for s in SYMBOLS:
+            mt5.symbol_select(s, True)
+
+    per_symbol, all_events = {}, []
     for sym in SYMBOLS:
-        mt5.symbol_select(sym, True)
-        rates = mt5.copy_rates_from_pos(sym, TIMEFRAME, 0, N_BARS)
-        if rates is None or len(rates) == 0:
-            print(f"\n{sym}: no data ({mt5.last_error()})"); continue
-        m15 = pd.DataFrame(rates)
-        m15["time"] = pd.to_datetime(m15["time"], unit="s")
-
+        m15, cached = load_or_pull(sym)
+        if m15 is None:
+            print(f"\n{sym}: no data (not cached / MT5 returned none)"); continue
         H = m15["high"].to_numpy(float); L = m15["low"].to_numpy(float)
         C = m15["close"].to_numpy(float); T = m15["time"].to_numpy()
         _, _, trend, events = thrust_core(H, L, T)
@@ -279,20 +370,34 @@ def main():
         if len(ev_df) == 0:
             print(f"\n{sym}: {len(m15)} bars, 0 breakouts"); continue
         ev_df = add_htf_agreement(ev_df, m15)
-        print(f"\n{sym}: {len(m15)} bars, {len(events)} breakouts")
-        report(ev_df, f"{sym}")
+        print(f"\n{sym}: {len(m15)} bars ({'cached' if cached else 'pulled'}), {len(events)} breakouts")
+        report(ev_df, sym)
+        per_symbol[sym] = ev_df
         all_events.append(ev_df)
 
-    mt5.shutdown()
+    if need_pull:
+        mt5.shutdown()
+    if not all_events:
+        return
 
-    if all_events:
-        pooled = pd.concat(all_events, ignore_index=True)
-        report(pooled, "POOLED — all symbols")
-        if PLOTS:
-            make_plots(pooled)
-        if OUT_CSV:
-            pooled.to_csv(OUT_CSV, index=False)
-            print(f"\nPer-event data -> {OUT_CSV} ({len(pooled)} rows) for your own cross-tabs.")
+    pooled = pd.concat(all_events, ignore_index=True)
+    report(pooled, "POOLED — all symbols")
+    chart = make_plots(pooled) if PLOTS else None
+    if OUT_CSV:
+        pooled.to_csv(OUT_CSV, index=False)
+        print(f"\nPer-event data -> {OUT_CSV} ({len(pooled)} rows) for your own cross-tabs.")
+
+    if push:
+        result = dict(
+            name="thrust-excursion",
+            created=pd.Timestamp.now(tz="UTC").isoformat(),
+            config=dict(symbols=SYMBOLS, timeframe="M15", horizon_c=HORIZON_C, n_bars=N_BARS,
+                        stop_rules="a=reenter b=oppBOS c=Nbars"),
+            pooled=build_block(pooled),
+            perSymbol={s: build_block(df) for s, df in per_symbol.items()},
+            chartPng=chart,
+        )
+        push_result(result)
 
 
 if __name__ == "__main__":

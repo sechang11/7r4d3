@@ -33,3 +33,6 @@ desktop.ini
 .vscode/
 .idea/
 webapp/data/journal/
+tools/bars_cache/
+thrust_events.csv
+thrust_R_hist.png

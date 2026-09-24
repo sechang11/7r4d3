@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>RiskManager — Studies</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="theme-color" content="#0e0e16">
+  <style>
+    .wrap { max-width: 1040px; margin: 0 auto; padding: 16px; }
+    .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+    select, .pill { background: var(--section); color: #fff; border: 1px solid var(--border);
+                    border-radius: 6px; padding: 6px 10px; font-size: 13px; }
+    .muted { color: var(--dim); font-size: 12px; }
+    h2 { color: var(--gold); font-size: 14px; text-transform: uppercase; letter-spacing: .6px;
+         margin: 22px 0 8px; }
+    table.st { border-collapse: collapse; width: 100%; font-size: 13px; margin: 4px 0 8px; }
+    table.st th, table.st td { border: 1px solid var(--border); padding: 4px 8px; text-align: right; }
+    table.st th:first-child, table.st td:first-child { text-align: left; color: var(--dim); }
+    table.st th { color: var(--dim); font-weight: 600; background: var(--section); }
+    .good { color: #4bd07a; } .bad { color: #e0685f; }
+    img.hist { max-width: 100%; border: 1px solid var(--border); border-radius: 6px; margin-top: 6px; }
+    a.back { color: var(--dim); text-decoration: none; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="row" style="justify-content:space-between">
+      <div class="row">
+        <a class="back" href="/">&larr; Dashboard</a>
+        <strong style="color:var(--gold)">Studies</strong>
+      </div>
+      <div class="row">
+        <select id="runSel"></select>
+        <select id="symSel"></select>
+      </div>
+    </div>
+    <div id="meta" class="muted" style="margin-top:8px"></div>
+    <div id="body"></div>
+    <div id="msg" class="muted" style="margin-top:20px"></div>
+  </div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const token = () => localStorage.getItem('rm_token') || '';
+const fmt = (v, s = '') => (v === null || v === undefined || Number.isNaN(v)) ? '—' : (typeof v === 'number' ? v.toFixed(2) : v) + s;
+
+async function api(path) {
+  const r = await fetch(path, { headers: token() ? { Authorization: `Bearer ${token()}` } : {} });
+  if (r.status === 401) throw new Error('unauthorised');
+  if (!r.ok) throw new Error(`error ${r.status}`);
+  return r.json();
+}
+
+// Render one stat block (all/up/down x rules) as a table.
+function dirTable(block) {
+  const rules = [['a', 'reenter'], ['b', 'oppBOS'], ['c', 'Nbars'], ['mae', 'MAE (b)']];
+  let h = '<table class="st"><tr><th>dir · rule</th><th>n</th><th>mean</th><th>median</th><th>p90</th><th>≥1R</th><th>≥2R</th><th>max</th></tr>';
+  for (const dir of ['all', 'up', 'down']) {
+    for (const [k, label] of rules) {
+      const s = block.byDir?.[dir]?.[k];
+      if (!s) continue;
+      h += `<tr><td>${dir} · ${label}</td><td>${s.n ?? '—'}</td><td>${fmt(s.mean, 'R')}</td>`
+         + `<td>${fmt(s.median, 'R')}</td><td>${fmt(s.p90, 'R')}</td><td>${fmt(s.hit1 * 100, '%')}</td>`
+         + `<td>${fmt(s.hit2 * 100, '%')}</td><td>${fmt(s.max, 'R')}</td></tr>`;
+    }
+  }
+  return h + '</table>';
+}
+
+function vsLine(block) {
+  const v = block.vs; if (!v || !v.n) return '';
+  const exp = v.expectancy;
+  return `<p class="muted">VS trade (+1R vs −1R): n=${v.n} · win <b>${fmt(v.win * 100, '%')}</b> · `
+       + `expectancy <b class="${exp >= 0 ? 'good' : 'bad'}">${exp >= 0 ? '+' : ''}${fmt(exp, 'R')}</b> · `
+       + `median ${fmt(v.medBars)} bars to resolve</p>`;
+}
+
+function htfBlock(block) {
+  const hf = block.htf; if (!hf) return '';
+  let h = '<h2>H4-trend agreement (rule b)</h2><table class="st"><tr><th></th><th>n</th><th>mean</th><th>median</th><th>≥1R</th><th>VS win</th></tr>';
+  for (const [k, label] of [['agree', 'agree'], ['disagree', 'disagree']]) {
+    const s = hf[k + 'R'] || {};
+    h += `<tr><td>${label}</td><td>${s.n ?? '—'}</td><td>${fmt(s.mean, 'R')}</td><td>${fmt(s.median, 'R')}</td>`
+       + `<td>${fmt(s.hit1 * 100, '%')}</td><td>${fmt(hf['vsWin' + (k === 'agree' ? 'Agree' : 'Disagree')] * 100, '%')}</td></tr>`;
+  }
+  return h + '</table>';
+}
+
+function targetsBlock(block) {
+  const t = block.targets; if (!t) return '';
+  let h = '<h2>Target hit-rate (rule b leg)</h2><table class="st"><tr>';
+  const keys = Object.keys(t);
+  h += keys.map(k => `<th>${k}R</th>`).join('') + '</tr><tr>';
+  h += keys.map(k => `<td>${fmt(t[k] * 100, '%')}</td>`).join('') + '</tr></table>';
+  return h;
+}
+
+function rangeBlock(block) {
+  const r = block.byRange; if (!r) return '';
+  let h = '<h2>By range size (rule b)</h2><table class="st"><tr><th></th><th>n</th><th>mean</th><th>median</th><th>≥1R</th></tr>';
+  for (const k of ['small', 'mid', 'large']) {
+    const s = r[k] || {};
+    h += `<tr><td>${k}</td><td>${s.n ?? '—'}</td><td>${fmt(s.mean, 'R')}</td><td>${fmt(s.median, 'R')}</td><td>${fmt(s.hit1 * 100, '%')}</td></tr>`;
+  }
+  return h + '</table>';
+}
+
+let current = null;   // the loaded study
+
+function renderBlock(block) {
+  if (!block) { $('body').innerHTML = '<p class="muted">no data for this selection</p>'; return; }
+  $('body').innerHTML =
+    `<h2>Excursion (events: ${block.events ?? '—'})</h2>` + dirTable(block) + vsLine(block)
+    + htfBlock(block) + targetsBlock(block) + rangeBlock(block)
+    + (current.chartPng ? `<h2>Distribution</h2><img class="hist" src="${current.chartPng}">` : '');
+}
+
+function fillSymbols() {
+  const sel = $('symSel'); sel.innerHTML = '';
+  sel.appendChild(new Option('POOLED', '__pooled__'));
+  for (const s of Object.keys(current.perSymbol || {})) sel.appendChild(new Option(s, s));
+  sel.value = '__pooled__';
+}
+
+function showSelectedSymbol() {
+  const v = $('symSel').value;
+  renderBlock(v === '__pooled__' ? current.pooled : current.perSymbol?.[v]);
+}
+
+async function loadRun(id) {
+  try {
+    current = await api('/api/studies/' + id);
+    const c = current.config || {};
+    $('meta').textContent = `${current.name} · ${new Date(current.created).toLocaleString()} · `
+      + `${(c.symbols || []).join(', ')} · ${c.timeframe || ''} · horizon ${c.horizon_c ?? '?'} bars`;
+    fillSymbols();
+    showSelectedSymbol();
+  } catch (e) { $('body').innerHTML = ''; $('msg').textContent = 'could not load run: ' + e.message; }
+}
+
+async function init() {
+  if (!token()) { $('msg').innerHTML = 'No bridge token. Enter it on the <a href="/">dashboard</a> first, then reload.'; return; }
+  try {
+    const { studies } = await api('/api/studies');
+    if (!studies.length) { $('msg').textContent = 'No studies yet — run the local analysis with --push.'; return; }
+    const sel = $('runSel'); sel.innerHTML = '';
+    for (const s of studies) sel.appendChild(new Option(`${s.name}  ·  ${new Date(s.created).toLocaleDateString()}  ·  ${s.events ?? '?'} ev`, s.id));
+    sel.onchange = () => loadRun(sel.value);
+    $('symSel').onchange = showSelectedSymbol;
+    loadRun(studies[0].id);
+  } catch (e) {
+    $('msg').innerHTML = e.message === 'unauthorised'
+      ? 'Token rejected. Re-enter it on the <a href="/">dashboard</a>.'
+      : 'could not load studies: ' + e.message;
+  }
+}
+init();
+</script>
+</body>
+</html>
