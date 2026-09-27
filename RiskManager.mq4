@@ -280,6 +280,7 @@ input bool   InpAllowRemoteExec = false;// Allow the web app to EXECUTE an armed
 // set is never exceeded. The lots stay identical within a split, which is
 // what rapid-firing one size by hand actually looks like.
 input int    InpRiskJitterPct = 5;   // Jitter risk down by up to N% per setup (0 = off)
+input int    InpOrderSplit    = 1;   // Default order split (legs per entry) - set differently per instance
 input int    InpStaggerMinMs  = 200; // Min gap between split legs (0 = all at once)
 input int    InpStaggerMaxMs  = 2000;// Max gap between split legs
 input int    InpCmdPollSec   = 2;    // Seconds between command polls (when remote allowed)
@@ -417,7 +418,7 @@ bool   g_customRiskEditing = false;   // keyboard input mode active?
 string g_customRiskText    = "";      // digits entered so far
 
 // Order split
-int    g_orderSplit         = 1;       // number of orders to split risk into
+int    g_orderSplit         = 1;       // number of orders to split risk into (seeded from InpOrderSplit on init; keyboard can override live)
 bool   g_splitEditing       = false;   // keyboard input mode for split
 string g_splitText          = "";      // digits entered so far
 
@@ -10501,6 +10502,11 @@ int OnInit()
 {
    SetChartTheme();
    UpdateUiScale();          // before BuildDashboard - every size depends on it
+
+   // Seed the live split from the input so it survives re-init (recompile,
+   // timeframe change, terminal restart) - and so two instances can run
+   // different split counts. The keyboard SPLIT button still overrides live.
+   g_orderSplit = MathMax(InpOrderSplit, 1);
 
    // Off by default. The Experts log is a local file the broker cannot read,
    // but a distinctive version string is still a correlation handle if logs
